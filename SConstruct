@@ -1,6 +1,7 @@
 
 src = Split("""
     PMurHash.c
+    tmpcache.c
 """)
 
 Library(target='tmpcache',source=src);

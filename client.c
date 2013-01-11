@@ -15,6 +15,8 @@
 #include <assert.h>
 #include <unistd.h>
 
+#include "tmpcache.h"
+
 #include <xs/xs.h>
 
 #define ADDRESS "ipc:///mnt/git/xs_cache/run/read.feed1.ipc"
@@ -141,12 +143,87 @@ void read_test(void) {
   xs_term(ctx);
 }
 
+typedef struct {
+
+  int watermark;
+  int free;
+  int malloc;
+
+} hint_t;
+
+void * custom_malloc(int size, void * _hint)
+{
+  printf("malloc of size %db\n",size);
+  hint_t * hint = (hint_t *)_hint;
+  assert(hint);
+  hint->watermark += size;
+  hint->malloc ++;
+  return malloc (size);
+}
+
+void custom_free(void *p, void *_hint)
+{
+  hint_t * hint = (hint_t *)_hint;
+  hint->free ++;
+
+  free (p);
+}
+
+int custom_choose(const char *key,const int klen,int *caches,int numof) {
+
+  int hash = tmpcache_hash(key,klen);
+  
+  return caches[(hash % numof)];
+}
+
 
 
 int main(void) {
 
-  read_test();
+  hint_t hint;
+  hint.watermark = 0;
+  hint.malloc = 0;
+  hint.free = 0;
 
+  void * ctx = tmpcache_custom(custom_malloc,custom_free,(void *)&hint,
+			       custom_choose,custom_choose,custom_choose);
+
+  assert(ctx);
+
+  int r = tmpcache_open(ctx);
+  assert (r == 0);
+
+  r = tmpcache_includecache (ctx,"ipc:///mnt/git/tmpcache/run/write.cache0",40,
+			     "ipc:///mnt/git/tmpcache/run/read.cache0",39);
+  
+  assert (r == 0);
+
+ 
+  
+  r = tmpcache_connect(ctx);
+  assert (r);
+
+  printf("number of cache connections %d\n",r);
+
+  /* do stuff : */
+
+
+  /* ================= */
+
+  r = tmpcache_disconnect(ctx);
+  assert (r);
+
+  printf("number of cache disconnects %d\n",r);
+
+  r = tmpcache_close (ctx);
+  assert (r == 0);
+
+  r = tmpcache_close(ctx);
+  assert (r == 0);
+
+  tmpcache_term(ctx);
+
+  printf("watermark %db malloc %d free %d\n",hint.watermark,hint.malloc,hint.free);
   return 0;
 }
 
