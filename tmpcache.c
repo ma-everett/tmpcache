@@ -23,7 +23,7 @@ void tc_free (void * ptr, void *hint) {
   free (ptr);
 }
 
-int tc_choosecache (const char *key,const int klen,int *cache_hashes,int numof) {
+int tc_choosecache (const char *key,const int klen,int *cache_hashes,int numof,void *hint) {
   
   int hash = tc_hash(key,klen); 
   return cache_hashes[(hash * hash) % numof];
@@ -65,8 +65,11 @@ typedef struct {
   void * hint;
 
   tmpcache_choosef readf;
+  void * rhint;
   tmpcache_choosef writef;
+  void * whint;
   tmpcache_choosef deletef;
+  void * dhint;
 
 } ctx_t;
 
@@ -120,11 +123,10 @@ int tmpcache_hash (const char *key,const int klen)
 
 void * tmpcache_init (void) 
 {
-  return tmpcache_custom (tc_malloc,tc_free,tc_choosecache,tc_choosecache,tc_choosecache,NULL);
+  return tmpcache_custom (tc_malloc,tc_free,NULL);
 }
 
-void * tmpcache_custom (tmpcache_mallocf mallocf,tmpcache_freef freef, void *hint,
-			tmpcache_choosef readf,tmpcache_choosef writef,tmpcache_choosef deletef) 
+void * tmpcache_custom (tmpcache_mallocf mallocf,tmpcache_freef freef, void *hint) 
 {
   
   ctx_t *ctx = (ctx_t *)(*mallocf) (sizeof(ctx_t),hint); /* FIXME, check mallocf first! */
@@ -133,10 +135,12 @@ void * tmpcache_custom (tmpcache_mallocf mallocf,tmpcache_freef freef, void *hin
   ctx->mallocf = (mallocf) ? mallocf : tc_malloc;
   ctx->freef = (freef) ? freef : tc_free;
   ctx->hint = hint;
-  ctx->readf = (readf) ? readf : tc_choosecache;
-  ctx->writef = (writef) ? writef : tc_choosecache;
-  ctx->deletef = (deletef) ? deletef : tc_choosecache;
-
+  ctx->readf =  tc_choosecache;
+  ctx->writef =  tc_choosecache;
+  ctx->deletef =  tc_choosecache;
+  ctx->rhint = NULL;
+  ctx->whint = NULL;
+  ctx->dhint = NULL;
   ctx->xsctx = NULL;
 
   ctx->caches = allocaddresses(NULL,0,DEFAULT_CACHES,ctx->mallocf,ctx->freef,ctx->hint);
@@ -151,6 +155,38 @@ void * tmpcache_custom (tmpcache_mallocf mallocf,tmpcache_freef freef, void *hin
   return (void *)ctx;
 }
 
+int tmpcache_option (void *_ctx,const int option,tmpcache_choosef f, void *hint) 
+{
+  ctx_t *ctx = (ctx_t *)_ctx;
+  
+  switch(option) {
+  case TMPCACHE_READ:
+    
+    ctx->readf = (f) ? f : tc_choosecache;
+    ctx->rhint = hint;
+    break;
+  case TMPCACHE_WRITE:
+
+    ctx->writef = (f) ? f : tc_choosecache;
+    ctx->whint = hint;
+    break;
+
+  case TMPCACHE_DELETE:
+
+    ctx->deletef = (f) ? f : tc_choosecache;
+    ctx->dhint = hint;
+    break;
+
+  default:
+    return -1;
+    break;
+  }
+
+
+  return (f) ? 1 : 0;
+}
+
+
 int tmpcache_open (void *_ctx)
 {
   ctx_t * ctx = (ctx_t *)_ctx;
@@ -164,7 +200,7 @@ int tmpcache_close (void *_ctx)
 {
   ctx_t *ctx = (ctx_t *)_ctx;
   int r = xs_term (ctx->xsctx);
-  assert (r == 0); /* FIXME */
+  /*assert (r == 0);*/ /* FIXME */
   return 0;
 }
 
@@ -351,14 +387,59 @@ int tmpcache_disconnect (void *_ctx)
   return disconnects;
 }
 
+/* ask the choose function for the cache to use, then do the operation on the cache */
+
 int tmpcache_write  (void *ctx,const char *key, const int klen, void *data,int dlen)
 {
+
   return -1;
 }
 
-int tmpcache_read   (void *ctx,const char *key, const int klen, void *buffer, int blen) 
+
+int tmpcache_read   (void *_ctx,const char *key, const int klen, void *buffer, int blen) 
 {
-  return -1;
+  /* stalling version of read, TODO add lazy pirate pattern here */
+
+  ctx_t *ctx = (ctx_t *)_ctx;
+  int hash = (*ctx->readf)(key,klen,ctx->readhashes,ctx->numof_reads,ctx->rhint);  
+
+  /* find the cache : */
+  int i;
+  address_t *addr = NULL;
+  for (i=0; i < ctx->numof;i++) {
+    addr = &ctx->caches[i];
+    if (addr->rhash == hash)
+      break;
+  }
+
+  if (addr == NULL)
+    return -1;
+
+  void *data = (*ctx->mallocf)(klen,ctx->hint);
+  memcpy(data,key,klen);
+  
+  xs_msg_t msg_ident;
+  xs_msg_init_data(&msg_ident,data,klen,ctx->freef,ctx->hint);
+  
+  int r;
+  r = xs_sendmsg(addr->read,&msg_ident,0);
+  assert (r != -1); /* FIXME */
+
+  r = xs_recvmsg(addr->read,&msg_ident,0);
+  assert (r != -1); /* FIXME */
+
+  xs_msg_t msg_data;
+  xs_msg_init(&msg_data);
+  r = xs_recvmsg(addr->read,&msg_data,0);
+  assert (r != -1); /* FIXME */
+
+  int size = xs_msg_size(&msg_data);
+  memcpy(xs_msg_data(&msg_data),buffer,(size <= blen) ? size : blen);
+
+  xs_msg_close(&msg_ident);
+  xs_msg_close(&msg_data);
+
+  return (size <= blen) ? size : blen;
 }
 
 int tmpcache_delete (void *ctx,const char *key, const int klen)

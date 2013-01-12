@@ -3,7 +3,10 @@
 #ifndef TMPCACHE_H
 #define TMPCACHE_H 1
 
-
+/* options : */
+#define TMPCACHE_READ 3
+#define TMPCACHE_WRITE 4
+#define TMPCACHE_DELETE 5
 
 /* 0. init, create a context
  * 1. configure caches 
@@ -13,19 +16,18 @@
  * 5. finish
  */
 
-/* TODO: include a version for suppling malloc/free funcs */
-
 typedef void *(*tmpcache_mallocf)(int,void *);
 typedef void (*tmpcache_freef)(void *,void *);
-typedef int (*tmpcache_choosef) (const char *,int,int *,int numof);
+typedef int (*tmpcache_choosef) (const char *,int,int *,int,void *);
 
 extern int tmpcache_hash (const char *key,const int klen);
 
 extern void * tmpcache_init (void);
+
 extern void * tmpcache_custom (tmpcache_mallocf mallocf,
-			       tmpcache_freef freef, void *hint,
-			       tmpcache_choosef readf, tmpcache_choosef writef,
-			       tmpcache_choosef deletef);
+			       tmpcache_freef freef, void *hint);
+
+extern int tmpcache_option(void *ctx,const int option, tmpcache_choosef f, void * hint);
 
 extern int tmpcache_term (void *ctx);
 

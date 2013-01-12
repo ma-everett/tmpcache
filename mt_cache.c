@@ -201,6 +201,9 @@ int read_then_send(void *sck,cache_t *cache)
   size = xs_msg_size(&msg_ident);
   if (size <= 0 || size > 256) {
 
+#if defined CACHE_DEBUG
+    printf("%s - improper identity size (%lld)\n",__FUNCTION__,size);
+#endif
     /* err - improper identity size */
     ret = 0; 
     goto err;
