@@ -216,6 +216,15 @@ int main(void) {
   void *buffer = malloc(1024 * 1024);
   r = tmpcache_read (ctx,"foo",3,buffer,1024 * 1024);
   assert(r != -1);
+
+  r = tmpcache_delete (ctx,"foo",3);
+  assert(r != -1);
+
+  r = tmpcache_read (ctx,"foo",3,buffer,1024 * 1024);
+  assert(r != -1);
+
+
+
   free (buffer);
 
   /* ================= */

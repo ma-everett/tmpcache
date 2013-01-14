@@ -442,7 +442,84 @@ int tmpcache_read   (void *_ctx,const char *key, const int klen, void *buffer, i
   return (size <= blen) ? size : blen;
 }
 
-int tmpcache_delete (void *ctx,const char *key, const int klen)
+int tmpcache_delete (void *_ctx,const char *key, const int klen)
 {
-  return -1;
+  ctx_t *ctx = (ctx_t *)_ctx;
+  int hash = (*ctx->deletef)(key,klen,ctx->writehashes,ctx->numof_writes,ctx->dhint);
+
+  int i;
+  address_t *addr = NULL;
+  for (i=0;i < ctx->numof;i++) {
+    addr = &ctx->caches[i];
+    if (addr->whash == hash)
+      break;
+  }
+
+  if (addr == NULL)
+    return -1;
+  
+  void *data = (*ctx->mallocf)(klen,ctx->hint);
+  memcpy(data,key,klen);
+
+  xs_msg_t msg_ident;
+  xs_msg_init_data(&msg_ident,data,klen,ctx->freef,ctx->hint);
+
+  int r;
+  r = xs_sendmsg(addr->write,&msg_ident,XS_SNDMORE);
+  assert( r != -1); /*FIXME */
+  
+  xs_msg_t msg_part;
+  xs_msg_init (&msg_part);
+
+  r = xs_sendmsg(addr->write,&msg_part,0);
+  assert( r != -1); /*FIXME */
+
+  return 0;
+}
+
+
+
+/* this is an example of lazy pirate pattern with timeout */
+int lazypirate_read (void *_ctx,const char *key,const int klen,void *data,int dlen)
+{
+  ctx_t *ctx = (ctx_t *)_ctx;
+  int hash = (*ctx->readf)(key,klen,ctx->readhashes,ctx->numof_reads,ctx->rhint);  
+
+  /* find the cache : */
+  int i;
+  address_t *addr = NULL;
+  for (i=0; i < ctx->numof;i++) {
+    addr = &ctx->caches[i];
+    if (addr->rhash == hash)
+      break;
+  }
+
+  if (addr == NULL)
+    return -1;
+
+  /* build then send msg for read here */
+  
+  xs_pollitem_t pitems[1];
+  pitems[0].socket = addr->read;
+  pitems[0].events = XS_POLLIN;
+
+  int count = 0;
+
+  /* wait for timeout */
+
+  for (;;) {
+
+    count = xs_poll (pitems,1,(1000 * 10));
+    
+    if (pitems[0].revents & XS_POLLIN) {
+      break;
+    }
+  }
+
+  /* if failure, shutdown connection and retry? or fail */
+
+  /* on success, read data back ... done */
+
+
+  return 0;
 }

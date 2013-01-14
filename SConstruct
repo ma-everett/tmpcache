@@ -1,5 +1,12 @@
 
 src = Split("""
+    bstrlib/bstrlib.c
+    bstrlib/bsafe.c
+""")
+
+Library(target='bstrlib',source=src);
+
+src = Split("""
     PMurHash.c
     tmpcache.c
 """)
@@ -7,6 +14,7 @@ src = Split("""
 Library(target='tmpcache',source=src);
 
 libs = Split( """
+  bstrlib
   tmpcache 
   xs
   pthread  
@@ -19,5 +27,9 @@ flags = '-g -Wall -O3 -Werror -ansi -DCACHE_MEM_DEBUG -DCACHE_DEBUG -DCACHE_MT';
 
 Program(target='mt_cache',LIBS=libs,LIBPATH='.',source='mt_cache.c',CCFLAGS=flags);  
 Program(target='client',LIBS=libs,LIBPATH='.',source='client.c');
+
+Program(target='read',LIBS=libs,LIBPATH='.',source='read.c',CCFLAGS=flags);
+Program(target='write',LIBS=libs,LIBPATH='.',source='write.c',CCFLAGS=flags);
+
 
 

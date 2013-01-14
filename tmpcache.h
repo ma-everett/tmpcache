@@ -29,6 +29,8 @@ extern void * tmpcache_custom (tmpcache_mallocf mallocf,
 
 extern int tmpcache_option(void *ctx,const int option, tmpcache_choosef f, void * hint);
 
+/* TODO: add some additional options per connection */
+
 extern int tmpcache_term (void *ctx);
 
 extern int tmpcache_open (void *ctx);
@@ -39,6 +41,11 @@ extern int tmpcache_includecache(void *ctx,const char *waddr,const int wlen,
 
 extern int tmpcache_connect (void *ctx);
 extern int tmpcache_disconnect (void *ctx);
+
+/* TODO: each operation should have a user supplied function for testing etc, 
+ * plus an option for setting the type of connection
+ */
+
 
 extern int tmpcache_write  (void *ctx,const char *key, const int klen, void *data,int dlen);
 extern int tmpcache_read   (void *ctx,const char *key, const int klen, void *buffer, int blen);
