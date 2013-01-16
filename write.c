@@ -129,8 +129,8 @@ int main(void)
     printf("> writing %s - %d%s\n",(const char *)key->data,
 	   (size <= 1024) ? size : size / 1024, (size <= 1024) ? "b" : "Kb");
 
+    memcpy(&tempbuf[0],"/mnt/git/tmpcache/test/temp_XXXXXX",34);
     int fp = mkstemp(&tempbuf[0]);
-    assert (fp != -1);
 
     if (fp) {
      
@@ -139,7 +139,7 @@ int main(void)
       close(fp);
 
       r = rename(tempbuf,(char *)key->data);
-      assert (r != -1);
+      printf("> renaming %s to %s (%s)\n",tempbuf,(char *)key->data,(r == 0) ? "pass" : "fail");
     }
       
       

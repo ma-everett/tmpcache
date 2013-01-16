@@ -980,6 +980,7 @@ int main (int argc,char **argv) {
   options.waddress = NULL;
   options.raddress = NULL;
 
+
   argp_parse (&argp,argc,argv,0,0,&options);
 
   if (options.memory < options.size) {

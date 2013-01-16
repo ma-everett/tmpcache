@@ -389,10 +389,46 @@ int tmpcache_disconnect (void *_ctx)
 
 /* ask the choose function for the cache to use, then do the operation on the cache */
 
-int tmpcache_write  (void *ctx,const char *key, const int klen, void *data,int dlen)
+int tmpcache_write  (void *_ctx,const char *key, const int klen, void *data,int dlen)
 {
+  if (dlen <= 0)
+    return 0;
 
-  return -1;
+  ctx_t *ctx = (ctx_t *)_ctx;
+  int hash = (*ctx->writef)(key,klen,ctx->readhashes,ctx->numof_reads,ctx->rhint);  
+
+  /* find the cache : */
+  int i;
+  address_t *addr = NULL;
+  for (i=0; i < ctx->numof;i++) {
+    addr = &ctx->caches[i];
+    if (addr->rhash == hash)
+      break;
+  }
+
+  if (addr == NULL)
+    return -1;
+
+  void *_data = (*ctx->mallocf)(klen,ctx->hint);
+  memcpy(_data,key,klen);
+  
+  xs_msg_t msg_ident;
+  xs_msg_init_data(&msg_ident,_data,klen,ctx->freef,ctx->hint);
+  
+  int r;
+  r = xs_sendmsg(addr->write,&msg_ident,XS_SNDMORE);
+  assert (r != -1); /* FIXME */
+
+  _data = (*ctx->mallocf)(dlen,ctx->hint);
+  memcpy(_data,data,dlen);
+
+  xs_msg_t msg_part;
+  xs_msg_init_data(&msg_part,_data,dlen,ctx->freef,ctx->hint);
+
+  r = xs_sendmsg(addr->write,&msg_part,0);
+  assert (r != -1); /* FIXME */
+
+  return dlen;
 }
 
 

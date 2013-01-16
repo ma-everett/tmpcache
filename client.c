@@ -6,6 +6,8 @@
  *  + multiple threaded deleting
  */
 
+#include "bstrlib/bstrlib.h"
+#include "bstrlib/bsafe.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -14,6 +16,7 @@
 #include <inttypes.h>
 #include <assert.h>
 #include <unistd.h>
+#include <time.h>
 
 #include "tmpcache.h"
 
@@ -200,8 +203,8 @@ int main(void) {
   int r = tmpcache_open(ctx);
   assert (r == 0);
 
-  r = tmpcache_includecache (ctx,"ipc:///mnt/git/tmpcache/run/write.cache0",40,
-			     "ipc:///mnt/git/tmpcache/run/read.cache0",39);
+  r = tmpcache_includecache (ctx,"ipc:///mnt/git/tmpcache/run/write",33,
+			     "ipc:///mnt/git/tmpcache/run/read",32);
   
   assert (r == 0);
 
@@ -214,21 +217,46 @@ int main(void) {
 
   /* do stuff : */
   void *buffer = malloc(1024 * 1024);
+  printf("--> read\n");
   r = tmpcache_read (ctx,"foo",3,buffer,1024 * 1024);
   assert(r != -1);
 
+  printf("--> delete\n");
   r = tmpcache_delete (ctx,"foo",3);
   assert(r != -1);
 
+  printf("--> read\n");
   r = tmpcache_read (ctx,"foo",3,buffer,1024 * 1024);
   assert(r != -1);
 
+  void *data = malloc(50);
+  memset(data,'1',50);
+
+  r = tmpcache_write (ctx,"foo",3,data,50);
+  assert(r != -1);
+  printf("--> write %d\n",r);
+
+  
+  bstring name;
+  int i=0;
+  for (i; i < 50; i++) {
+
+    name = bformat("foo-%d",i);
+    r = tmpcache_write (ctx,(char *)name->data,blength(name),data,50);
+    printf("--> write %s %d\n",(const char *)name->data,r);
+  }
+
+  bdestroy(name);
+
+  free (data);
+
+  r = tmpcache_read (ctx,"foo",3,buffer,1024 * 1024);
 
 
   free (buffer);
 
   /* ================= */
-
+  sleep(2);
   r = tmpcache_disconnect(ctx);
   assert (r);
 
