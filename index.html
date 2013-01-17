@@ -1,0 +1,107 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <title>tmpcache by ma-everett</title>
+
+    <link rel="stylesheet" href="stylesheets/styles.css">
+    <link rel="stylesheet" href="stylesheets/pygment_trac.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  </head>
+  <body>
+    <div class="wrapper">
+      <header>
+        <h1>tmpcache</h1>
+        <p>Temporary cache written in C with Crossroads I/O library providing the network interface.  </p>
+
+        <p class="view"><a href="https://github.com/ma-everett/tmpcache">View the Project on GitHub <small>ma-everett/tmpcache</small></a></p>
+
+
+        <ul>
+          <li><a href="https://github.com/ma-everett/tmpcache/zipball/master">Download <strong>ZIP File</strong></a></li>
+          <li><a href="https://github.com/ma-everett/tmpcache/tarball/master">Download <strong>TAR Ball</strong></a></li>
+          <li><a href="https://github.com/ma-everett/tmpcache">View On <strong>GitHub</strong></a></li>
+        </ul>
+      </header>
+      <section>
+        <h1>tmpcache</h1>
+
+<h2>version 0</h2>
+
+<p>In memory temporary cache written in C with 
+<a href="http://www.crossroads.io">Crossroads I/O library</a> providing the network
+interface, for GNU/Linux.</p>
+
+<p>This is by no means a finished production ready solution for caching data,
+there is much still to do with the (no-existing) client library. At present,
+the project also lacks documentation. </p>
+
+<h2>Build and Install</h2>
+
+<p>You will need Crossroads I/O library installed and the scons build system. </p>
+
+<blockquote>
+<p>scons</p>
+</blockquote>
+
+<p>At the present time, I would not choice to install or use tmpcache
+(especially) for production. </p>
+
+<h2>Running</h2>
+
+<blockquote>
+<p>tmpcache -m 64MB -s 1MB -w [waddress] -r [raddress] -c [dir]</p>
+</blockquote>
+
+<p>Where <em>waddress</em> (for writing) and <em>raddress</em> (for reading) is 
+an Crossroads adddress in one of the following forms.</p>
+
+<ol>
+<li>IPC:///tmp/write.tmpcache.ipc</li>
+<li>TCP://127.0.0.1:8888 </li>
+</ol><p>Maximum memory is set with the <em>m</em> argument, the default is 64MB. </p>
+
+<p>The maximum size of the data to cache, as set with the <em>s</em> argument, the
+default is 1MB. </p>
+
+<p><em>dir</em> is the directory (absolute path) where the cache will reside. To 
+improve the performance, use a <em>tmpfs</em> for the cache directory. </p>
+
+<h2>Creating a Snapshot</h2>
+
+<p>Because we use the filesystem, you can use the standard commands for copying
+files, however <em>tmpcache</em> provides to alternative methods of creating a
+snaphot/copy of the cache. The first is to directly write the contents of
+the cache to another cache.</p>
+
+<blockquote>
+<p>tmpcache -s 1 -c [dir] -w [destination]</p>
+</blockquote>
+
+<p>Where <em>destination</em> is another cache. The second method is to create a 
+<a href="http://www.corpit.ru/mjt/tinycdb.html#intro">cdb</a> database.</p>
+
+<blockquote>
+<p>tmpcache -s [filename].cdb -c [dir]</p>
+</blockquote>
+
+<p>Where <em>filename</em> is an absolute path. This will create a database file which
+we can then create a readonly cache. </p>
+
+<blockquote>
+<p>tmpcache -c [filename].cdb -r [raddress]</p>
+</blockquote>
+      </section>
+      <footer>
+        <p>This project is maintained by <a href="https://github.com/ma-everett">ma-everett</a></p>
+        <p><small>Hosted on GitHub Pages &mdash; Theme by <a href="https://github.com/orderedlist">orderedlist</a></small></p>
+      </footer>
+    </div>
+    <script src="javascripts/scale.fix.js"></script>
+    
+  </body>
+</html>
