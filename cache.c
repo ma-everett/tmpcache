@@ -29,10 +29,13 @@ extern int mkstemp (char *);
 #include <syslog.h>
 #endif
 
-/* cdb format :
-   +klen,dlen:key->data
-*/
+#if defined CACHE_USECDB
+#include <cdb.h>
+#include <fcntl.h>
 
+typedef struct cdb cdb_t;
+typedef struct cdb_make cdbm_t;
+#endif
 
 #define CACHE_VERSION "cache 0"
 
@@ -59,13 +62,91 @@ typedef struct arguments {
   char *waddress;
   char *raddress;
   char *cache;
-  unsigned int snapshot;
+  char *snapshot;
 
   void *ctx;
 
 } arguments_t;
 
 unsigned int u_term;
+
+
+unsigned int readfromfile (void *hint,bstring key,void *data,unsigned int dlen)
+{  
+  unsigned int bufsize = 0;
+  FILE *fp = fopen((const char *)key->data,"r");
+  if (fp) {
+
+    long cpos = ftell(fp);
+    fseek(fp,0,SEEK_END);
+    bufsize = ftell(fp);
+    fseek(fp,cpos,SEEK_SET);
+      
+    if (bufsize) { /* FOUND */
+      
+      fread(data,(bufsize < dlen) ? bufsize : dlen,1,fp);
+      
+      int Kb = (bufsize <= 1024) ? bufsize : bufsize / 1024;
+
+      printf("%s> looking up %s, %d%s\n",__FUNCTION__,(const char *)key->data,
+	     Kb,(bufsize <= 1024) ? "b" : "Kb");
+      
+#if defined CACHE_USESYSLOG /*TODO: add level of logging*/
+      syslog (LOG_DEBUG,"%s> %s, %d%s",__FUNCTION__,(const char *)key->data,
+	      Kb, (bufsize <= 1024) ? "b" : "Kb");
+#endif
+    } else { /* MISS */
+
+      printf("%s> looking up %s,miss\n",__FUNCTION__,(const char *)key->data);
+      
+#if defined CACHE_USESYSLOG /*TODO: add level of logging*/
+      syslog (LOG_DEBUG,"%s> %s, miss",__FUNCTION__,(const char *)key->data);
+#endif
+
+    }
+
+    fclose(fp); 
+  }
+
+  return (bufsize < dlen) ? bufsize : dlen;
+}
+
+#if defined CACHE_USECDB
+
+unsigned int readfromcdb (void *_cdb,bstring key,void *data,unsigned int dlen)
+{
+  cdb_t *cdb = (cdb_t *)_cdb;
+  unsigned int vlen = 0,vpos = 0;
+
+  if (cdb_find(cdb,(const char *)key->data,blength(key)) > 0) {
+
+    vpos = cdb_datapos(cdb);
+    vlen = cdb_datalen(cdb);
+    
+    cdb_read(cdb,data,(vlen < dlen) ? vlen : dlen, vpos);
+
+    int Kb = (vlen <= 1024) ? vlen : vlen / 1024;
+
+    printf("%s> looking up %s, %d%s\n",__FUNCTION__,(const char *)key->data,
+	   Kb, (vlen <= 1024) ? "b" : "Kb");
+
+#if defined CACHE_USESYSLOG 
+    syslog (LOG_DEBUG,"%s> %s, %d%s",__FUNCTION__,(const char *)key->data,
+	    Kb, (vlen <= 1024) ? "b" : "Kb");
+#endif
+  } else { /*MISS*/
+    
+    printf("%s> looking up %s, miss\n",__FUNCTION__,(const char *)key->data);
+    
+#if defined CACHE_USESYSLOG 
+    syslog (LOG_DEBUG,"%s> %s, miss",__FUNCTION__,(const char *)key->data);
+#endif
+  }  
+
+  return (vlen < dlen) ? vlen : dlen;
+}
+#endif
+
 
 void xsfree (void *data, void *hint)
 {
@@ -84,7 +165,41 @@ void * readcache (void *arg)
   int sbufsize = 256 - (blength(rootpath) + 2);
   char sbuf[ sbufsize ];
   
+  unsigned int (*readf) (void *,bstring,void *,unsigned int) = readfromfile;
+  void *hint = NULL;
+
+#if defined CACHE_USECDB
+
+  bstring fileformat = bmidstr(rootpath,blength(rootpath) - 4, 4);
+  bstring cdbformat = bfromcstr(".cdb");
+  cdb_t cdb;
+  int ss = 0;
+
+  if (biseq(fileformat,cdbformat)) { 
+
+    /* check if the cache address is a cdb file (ends in .cdb) */
+    int fd = open((const char *)rootpath->data, O_RDONLY);
+    if (!fd) {
+      
+      printf("%s, cdb init error\n",__FUNCTION__);
+
+#if defined CACHE_USESYSLOG
+      syslog (LOG_ERR,"%s, cdb init error",__FUNCTION__);
+#endif
+
+      goto exitearly;
+    }
+
+    cdb_init(&cdb,fd);
+    
+    readf = readfromcdb;
+    hint = (void *)&cdb;  
+    ss = 1;
+  }
+#endif
+  
   void *ctx = xs_init();
+
   if (!ctx) {
 #if defined CACHE_USESYSLOG
     syslog (LOG_ERR,"%s, xs error : %s",__FUNCTION__,xs_strerror(xs_errno()));
@@ -154,50 +269,21 @@ void * readcache (void *arg)
     memset (&sbuf[0],'\0',256);
     memcpy (&sbuf[0],xs_msg_data(&msg_key),xs_msg_size(&msg_key));
     
+#if defined CACHE_USECDB
+    bstring key = (ss == 1) ? bfromcstr(sbuf) : bformat("%s/%s\0",(const char *)rootpath->data,sbuf);
+#else 
     bstring key = bformat("%s/%s\0",(const char *)rootpath->data,sbuf);
-
-    FILE *fp = fopen((const char *)key->data,"r");
-    if (fp) {
-      long cpos = ftell(fp);
-      fseek(fp,0,SEEK_END);
-      size_t bufsize = ftell(fp);
-      fseek(fp,cpos,SEEK_SET);
-      
-      if (bufsize) {
-	char *filebuffer = (char *)malloc(bufsize);
-	fread(&filebuffer[0],bufsize,1,fp);
-	fclose(fp);
-
-	int Kb = (bufsize <= 1024) ? bufsize : bufsize / 1024;
-	printf("%s> looking up %s, %d%s\n",__FUNCTION__,(const char *)key->data,
-	       Kb,(bufsize <= 1024) ? "b" : "Kb");
-
-#if defined CACHE_USESYSLOG /*TODO: add level of logging*/
-	syslog (LOG_DEBUG,"%s> %s, %d%s",__FUNCTION__,(const char *)key->data,
-		Kb, (bufsize <= 1024) ? "b" : "Kb");
 #endif
 
-	xs_msg_init_data (&msg_part,filebuffer,bufsize,xsfree,NULL);
-      } else {
+    void *data = (void *)malloc(args->size);
 
-	fclose (fp);
-	printf("%s> looking up %s, miss\n",__FUNCTION__,(const char *)key->data);
-
-#if defined CACHE_USESYSLOG
-	syslog (LOG_DEBUG,"%s> %s, miss",__FUNCTION__,(const char *)key->data);
-#endif
-
-      }
-    } else { /*MISS*/
-
-      printf("%s> looking up %s, miss\n",__FUNCTION__,(const char *)key->data);
+    unsigned int rsize = (*readf)(hint,key,data,(unsigned int)args->size);
+    
+    if (rsize) 
+      xs_msg_init_data(&msg_part,data,rsize,xsfree,NULL);
+    else
       xs_msg_init (&msg_part);
     
-#if defined CACHE_USESYSLOG
-      syslog (LOG_DEBUG,"%s> %s, miss",__FUNCTION__,(const char *)key->data);
-#endif      
-    }
-
     bdestroy (key);
 
     r = xs_sendmsg (sock,&msg_ident,XS_SNDMORE);
@@ -240,6 +326,18 @@ void * readcache (void *arg)
     printf("%s! %s\n",__FUNCTION__,xs_strerror(xs_errno()));
     abort();
   }
+
+ exitearly:
+
+#if defined CACHE_USECDB
+  
+  if (biseq(fileformat,cdbformat)) { 
+    cdb_free (&cdb);
+  }
+
+  bdestroy(fileformat);
+  bdestroy(cdbformat);
+#endif
 
   return NULL;
 }
@@ -387,6 +485,19 @@ void * writecache (void *arg)
   return NULL;
 }
 
+int snapshotstdout (void *hint, const char *key, int klen, char *data, int dlen) {
+
+  printf("+%d,%d:%s->%s\n",klen,dlen,key,data);
+  return 1;
+}
+
+#if defined CACHE_USECDB
+int snapshotcdbout (void *_cdb, const char *key, int klen, char *data, int dlen) {
+
+  cdbm_t * cdbm = (cdbm_t *)_cdb;
+  return cdb_make_add(cdbm,key,klen,data,dlen);
+}
+#endif
 
 void *snapshotcache (void * arg) 
 {
@@ -402,12 +513,44 @@ void *snapshotcache (void * arg)
   ctx = NULL; sock = NULL;
   int r = 0;
 
-  bstring root = bfromcstr(args->cache);
-  d = opendir((const char *)root->data);
+  bstring snapshotpath = bfromcstr(args->snapshot);
+  bstring rootpath = bfromcstr(args->cache);
+  d = opendir((const char *)rootpath->data);
   if (!d) {
-    printf("%s! error opening directory %s\n",__FUNCTION__,(const char *)root->data);
+    printf("%s! error opening directory %s\n",__FUNCTION__,(const char *)rootpath->data);
     return NULL;
   }
+
+  int (*writef) (void *, const char *, int, char *, int) = snapshotstdout;
+  void * hint = NULL;
+
+#if defined CACHE_USECDB
+
+  bstring fileformat = bmidstr(snapshotpath,blength(snapshotpath) - 4, 4);
+  bstring cdbformat = bfromcstr(".cdb");
+  cdbm_t cdb;
+
+  if (biseq(fileformat,cdbformat)) { 
+
+    /* check if the cache address is a cdb file (ends in .cdb) */
+    int fd = open((const char *)snapshotpath->data, O_RDWR|O_CREAT);
+    if (!fd) {
+      
+      printf("%s, cdb init error\n",__FUNCTION__);
+
+#if defined CACHE_USESYSLOG
+      syslog (LOG_ERR,"%s, cdb init error",__FUNCTION__);
+#endif
+
+      goto exitearly;
+    }
+
+    cdb_make_start(&cdb,fd);
+
+    writef = snapshotcdbout;
+    hint = (void *)&cdb;
+  }
+#endif
 
   if (args->waddress) { 
     
@@ -425,7 +568,7 @@ void *snapshotcache (void * arg)
     if (strcmp(dir->d_name, ".")== 0 || strcmp(dir->d_name,"..") == 0)
       continue;
     
-    bstring filename = bformat("%s/%s",(const char *)root->data,dir->d_name);
+    bstring filename = bformat("%s/%s",(const char *)rootpath->data,dir->d_name);
 
     struct stat statbuf;
     stat((const char *)filename->data,&statbuf);
@@ -466,8 +609,7 @@ void *snapshotcache (void * arg)
 
 	} else {
 
-	
-	  printf("+%d,%d:%s->%s\n",strlen(dir->d_name),(bufsize - 1),dir->d_name,filebuffer);
+	  (*writef)(hint,dir->d_name,strlen(dir->d_name),filebuffer,(bufsize - 1));	
 	  free (filebuffer);
 	}
       }
@@ -478,6 +620,9 @@ void *snapshotcache (void * arg)
 
   error:
 
+  bdestroy (rootpath);
+  bdestroy (snapshotpath);
+
   if (args->waddress) {
 
     r = xs_close(sock);
@@ -486,6 +631,18 @@ void *snapshotcache (void * arg)
     assert(r != -1);/*FIXME*/
   } 
 
+ exitearly:
+#if CACHE_USECDB
+
+ if (biseq(fileformat,cdbformat)) { 
+   cdb_make_finish(&cdb);
+ }
+
+ bdestroy(fileformat);
+ bdestroy(cdbformat);
+
+#endif
+    
   return NULL;
 }
   
@@ -569,7 +726,7 @@ static error_t parseoptions (int key, char *arg, struct argp_state *state)
 
   switch(key) {
   case 's':
-    arguments->snapshot = 1;
+    arguments->snapshot = arg;
     break;
   case 'c':
     if (arg)
@@ -627,7 +784,7 @@ int main (int argc, char **argv)
   options.waddress = NULL;
   options.raddress = NULL;
   options.cache = NULL;
-  options.snapshot = 0;
+  options.snapshot = NULL;
 
   argp_parse (&argp,argc,argv,0,0,&options);
 

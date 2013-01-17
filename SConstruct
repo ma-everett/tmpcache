@@ -16,6 +16,7 @@ Library(target='tmpcache',source=src);
 libs = Split( """
   bstrlib
   tmpcache 
+  cdb
   xs
   pthread  
   rt
@@ -23,7 +24,7 @@ libs = Split( """
   dl
 	""")
 
-flags = '-g -Wall -O2 -Werror -ansi -DCACHE_MEM_DEBUG -DCACHE_DEBUG -DCACHE_USESYSLOG';
+flags = '-g -Wall -O2 -Werror -ansi -DCACHE_MEM_DEBUG -DCACHE_DEBUG -DCACHE_USESYSLOG -DCACHE_USECDB';
 
   
 Program(target='client',LIBS=libs,LIBPATH='.',source='client.c');
