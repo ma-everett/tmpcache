@@ -5,6 +5,8 @@
  *            snapshot to cdb then read only
  */
 
+#include "../config.h"
+
 #include "bstrlib/bstrlib.h"
 #include "bstrlib/bsafe.h"
 
@@ -24,12 +26,9 @@ extern int mkstemp (char *);
 #include <argp.h>
 
 #include <assert.h> /* FIXME */
-
-#if defined CACHE_USESYSLOG
 #include <syslog.h>
-#endif
 
-#if defined CACHE_USECDB
+#if defined HAVE_LIBCDB
 #include <cdb.h>
 #include <fcntl.h>
 
@@ -47,7 +46,11 @@ static char args_doc[] = ""; /*FIXME*/
 
 static struct argp_option argp_options[] = {
   {"snapshop", 's', "", 0, "Snapshot to stdout in cdb format"},
-  {"cache",    'c', "DIR|FILE",0,"Tmpfs path or cdb file"},
+#if defined HAVE_LIBCDB
+  {"cache",    'c', "DIR|FILE",0,"tmpfs path or cdb file"},
+#else
+  {"cache",    'c', "DIR",0, "tmpfs path"},
+#endif
   {"memory",   'm', "64MB", 0, "Total memory"},
   {"datasize", 'd', "1MB",  0, "Max storage size per data"},
   {"write",    'w', "ADDR", 0, "Write address for cache"},
@@ -91,18 +94,14 @@ unsigned int readfromfile (void *hint,bstring key,void *data,unsigned int dlen)
       printf("%s> looking up %s, %d%s\n",__FUNCTION__,(const char *)key->data,
 	     Kb,(bufsize <= 1024) ? "b" : "Kb");
       
-#if defined CACHE_USESYSLOG /*TODO: add level of logging*/
       syslog (LOG_DEBUG,"%s> %s, %d%s",__FUNCTION__,(const char *)key->data,
 	      Kb, (bufsize <= 1024) ? "b" : "Kb");
-#endif
+
     } else { /* MISS */
 
       printf("%s> looking up %s,miss\n",__FUNCTION__,(const char *)key->data);
       
-#if defined CACHE_USESYSLOG /*TODO: add level of logging*/
       syslog (LOG_DEBUG,"%s> %s, miss",__FUNCTION__,(const char *)key->data);
-#endif
-
     }
 
     fclose(fp); 
@@ -111,7 +110,7 @@ unsigned int readfromfile (void *hint,bstring key,void *data,unsigned int dlen)
   return (bufsize < dlen) ? bufsize : dlen;
 }
 
-#if defined CACHE_USECDB
+#if defined HAVE_LIBCDB
 
 unsigned int readfromcdb (void *_cdb,bstring key,void *data,unsigned int dlen)
 {
@@ -130,17 +129,14 @@ unsigned int readfromcdb (void *_cdb,bstring key,void *data,unsigned int dlen)
     printf("%s> looking up %s, %d%s\n",__FUNCTION__,(const char *)key->data,
 	   Kb, (vlen <= 1024) ? "b" : "Kb");
 
-#if defined CACHE_USESYSLOG 
     syslog (LOG_DEBUG,"%s> %s, %d%s",__FUNCTION__,(const char *)key->data,
 	    Kb, (vlen <= 1024) ? "b" : "Kb");
-#endif
+
   } else { /*MISS*/
     
     printf("%s> looking up %s, miss\n",__FUNCTION__,(const char *)key->data);
-    
-#if defined CACHE_USESYSLOG 
+
     syslog (LOG_DEBUG,"%s> %s, miss",__FUNCTION__,(const char *)key->data);
-#endif
   }  
 
   return (vlen < dlen) ? vlen : dlen;
@@ -168,7 +164,7 @@ void * readcache (void *arg)
   unsigned int (*readf) (void *,bstring,void *,unsigned int) = readfromfile;
   void *hint = NULL;
 
-#if defined CACHE_USECDB
+#if defined HAVE_LIBCDB
 
   bstring fileformat = bmidstr(rootpath,blength(rootpath) - 4, 4);
   bstring cdbformat = bfromcstr(".cdb");
@@ -183,9 +179,7 @@ void * readcache (void *arg)
       
       printf("%s, cdb init error\n",__FUNCTION__);
 
-#if defined CACHE_USESYSLOG
       syslog (LOG_ERR,"%s, cdb init error",__FUNCTION__);
-#endif
 
       goto exitearly;
     }
@@ -201,36 +195,34 @@ void * readcache (void *arg)
   void *ctx = xs_init();
 
   if (!ctx) {
-#if defined CACHE_USESYSLOG
+
     syslog (LOG_ERR,"%s, xs error : %s",__FUNCTION__,xs_strerror(xs_errno()));
-#endif 
+
     printf("%s! %s\n",__FUNCTION__,xs_strerror(xs_errno()));
     abort();
   }
 
   void *sock = xs_socket(ctx,XS_XREP);
   if (!sock) {
-#if defined CACHE_USESYSLOG
+
     syslog (LOG_ERR,"%s, xs error : %s",__FUNCTION__,xs_strerror(xs_errno()));
-#endif
+
     printf("%s! %s\n",__FUNCTION__,xs_strerror(xs_errno()));
     goto error;
   }
   
   int r = xs_bind(sock,(const char *)address->data);
   if (r == -1) {
-#if defined CACHE_USESYSLOG
+
     syslog (LOG_ERR,"%s, xs error : %s",__FUNCTION__,xs_strerror(xs_errno()));
-#endif
+
     printf("%s! %s\n",__FUNCTION__,xs_strerror(xs_errno()));
     goto error;
   }
 
-
-#if defined CACHE_USESYSLOG
   syslog (LOG_INFO,"%s, opening read connection %s on cache %s",
 	  __FUNCTION__,(const char *)address->data,args->cache);
-#endif
+
     
   bdestroy (address);
   
@@ -269,7 +261,7 @@ void * readcache (void *arg)
     memset (&sbuf[0],'\0',256);
     memcpy (&sbuf[0],xs_msg_data(&msg_key),xs_msg_size(&msg_key));
     
-#if defined CACHE_USECDB
+#if defined HAVE_LIBCDB
     bstring key = (ss == 1) ? bfromcstr(sbuf) : bformat("%s/%s\0",(const char *)rootpath->data,sbuf);
 #else 
     bstring key = bformat("%s/%s\0",(const char *)rootpath->data,sbuf);
@@ -304,32 +296,31 @@ void * readcache (void *arg)
 
  error:
   
-#if defined CACHE_USESYSLOG
   syslog (LOG_INFO,"%s, closing read connection %s to cache %s",__FUNCTION__,
 	  args->raddress,args->cache);
-#endif
+
 
   r = xs_close (sock); 
   if (r == -1) {
-#if defined CACHE_USESYSLOG
+
     syslog (LOG_ERR,"%s, xs error : %s",__FUNCTION__,xs_strerror(xs_errno()));
-#endif 
+
     printf("%s! %s\n",__FUNCTION__,xs_strerror(xs_errno()));
     abort();
   }
 
   r = xs_term (ctx);
   if (r == -1) {
-#if defined CACHE_USESYSLOG
+
     syslog (LOG_ERR,"%s, xs error : %s",__FUNCTION__,xs_strerror(xs_errno()));
-#endif
+
     printf("%s! %s\n",__FUNCTION__,xs_strerror(xs_errno()));
     abort();
   }
 
  exitearly:
 
-#if defined CACHE_USECDB
+#if defined HAVE_LIBCDB
   
   if (biseq(fileformat,cdbformat)) { 
     cdb_free (&cdb);
@@ -358,36 +349,34 @@ void * writecache (void *arg)
 
   void *ctx = xs_init();
   if (!ctx) {
-#if defined CACHE_USESYSLOG
+
     syslog (LOG_ERR,"%s, xs error : %s",__FUNCTION__,xs_strerror(xs_errno()));
-#endif 
+
     printf("%s! %s\n",__FUNCTION__,xs_strerror(xs_errno()));
     abort();
   }
 
   void *sock = xs_socket(ctx,XS_PULL);
   if (!sock) {
-#if defined CACHE_USESYSLOG
+
     syslog (LOG_ERR,"%s, xs error : %s",__FUNCTION__,xs_strerror(xs_errno()));
-#endif
+
     printf("%s! %s\n",__FUNCTION__,xs_strerror(xs_errno()));
     goto error;
   }
   
   int r = xs_bind(sock,(const char *)address->data);
   if (r == -1) {
-#if defined CACHE_USESYSLOG
+
     syslog (LOG_ERR,"%s, xs error : %s",__FUNCTION__,xs_strerror(xs_errno()));
-#endif
+
     printf("%s! %s\n",__FUNCTION__,xs_strerror(xs_errno()));
     goto error;
   }
 
-
-#if defined CACHE_USESYSLOG
   syslog (LOG_INFO,"%s, opening write connection %s on cache %s",
 	  __FUNCTION__,(const char *)address->data,args->cache);
-#endif
+
     
   bdestroy (address);
 
@@ -459,25 +448,25 @@ void * writecache (void *arg)
 
  error:
   
-#if defined CACHE_USESYSLOG
+
   syslog (LOG_INFO,"%s, closing write connection %s to cache %s",__FUNCTION__,
 	  args->waddress,args->cache);
-#endif
+
 
   r = xs_close (sock); 
   if (r == -1) {
-#if defined CACHE_USESYSLOG
+
     syslog (LOG_ERR,"%s, xs error : %s",__FUNCTION__,xs_strerror(xs_errno()));
-#endif 
+
     printf("%s! %s\n",__FUNCTION__,xs_strerror(xs_errno()));
     abort();
   }
 
   r = xs_term (ctx);
   if (r == -1) {
-#if defined CACHE_USESYSLOG
+
     syslog (LOG_ERR,"%s, xs error : %s",__FUNCTION__,xs_strerror(xs_errno()));
-#endif
+
     printf("%s! %s\n",__FUNCTION__,xs_strerror(xs_errno()));
     abort();
   }
@@ -491,7 +480,7 @@ int snapshotstdout (void *hint, const char *key, int klen, char *data, int dlen)
   return 1;
 }
 
-#if defined CACHE_USECDB
+#if defined HAVE_LIBCDB
 int snapshotcdbout (void *_cdb, const char *key, int klen, char *data, int dlen) {
 
   cdbm_t * cdbm = (cdbm_t *)_cdb;
@@ -524,7 +513,7 @@ void *snapshotcache (void * arg)
   int (*writef) (void *, const char *, int, char *, int) = snapshotstdout;
   void * hint = NULL;
 
-#if defined CACHE_USECDB
+#if defined HAVE_LIBCDB
 
   bstring fileformat = bmidstr(snapshotpath,blength(snapshotpath) - 4, 4);
   bstring cdbformat = bfromcstr(".cdb");
@@ -537,10 +526,7 @@ void *snapshotcache (void * arg)
     if (!fd) {
       
       printf("%s, cdb init error\n",__FUNCTION__);
-
-#if defined CACHE_USESYSLOG
       syslog (LOG_ERR,"%s, cdb init error",__FUNCTION__);
-#endif
 
       goto exitearly;
     }
@@ -632,7 +618,7 @@ void *snapshotcache (void * arg)
   } 
 
  exitearly:
-#if CACHE_USECDB
+#if HAVE_LIBCDB
 
  if (biseq(fileformat,cdbformat)) { 
    cdb_make_finish(&cdb);
@@ -792,9 +778,7 @@ int main (int argc, char **argv)
   signal (SIGINT,signalhandler);
   signal (SIGTERM,signalhandler);
 
-#if defined CACHE_USESYSLOG
   openlog (NULL,LOG_PID | LOG_NDELAY,LOG_USER);
-#endif
  
  /* check for snapshot mode : */
   if (options.cache && options.snapshot) {
@@ -823,11 +807,7 @@ int main (int argc, char **argv)
     pthread_t read_t;
     if (pthread_create(&read_t,NULL,readcache,(void *)&options) != 0) {
       printf("pthread_create error\n");
-      
-#if defined CACHE_USESYSLOG
       syslog (LOG_ERR,"read thread creation error, aborting.");
-#endif
-
       abort();
     }
 
@@ -839,9 +819,6 @@ int main (int argc, char **argv)
 
  exit:
 
-#if defined CACHE_USESYSLOG
   closelog();
-#endif
-
   exit(0);
 }

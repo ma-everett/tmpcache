@@ -1,2 +1,2 @@
 bin_PROGRAMS = tmpcache
-tmpcache_SOURCES = cache.c bstrlib/bstrlib.c bstrlib/bsafe.c
+tmpcache_SOURCES = bstrlib/bstrlib.c read.c main.c cache.h utility.c
