@@ -143,6 +143,24 @@ unsigned int checksignal (void)
   return (u_term);
 }
 
+void *readcache (void *op) {
+
+  arguments_t *options = (arguments_t *)op;
+
+  bstring address = bfromcstr(options->raddress);
+  bstring cachepath = bfromcstr(options->cache);
+
+  syslog (LOG_INFO,"reading cache from %s @ %s",(char *)cachepath->data,(char *)address->data);
+  
+  c_readfromcache (address,cachepath,options->size,checksignal);
+
+  syslog (LOG_INFO,"closing cache %s @ %s for reading",(char *)cachepath->data,(char *)address->data);
+  
+  bdestroy (address);
+  bdestroy (cachepath);
+
+  return NULL;
+}
 
 int main (int argc, char **argv) 
 {
@@ -166,12 +184,55 @@ int main (int argc, char **argv)
 
     bstring address = bfromcstr(options.raddress);
     bstring cachepath = bfromcstr(options.cache);
+
+    syslog (LOG_INFO,"reading cache from %s @ %s",(char *)cachepath->data,(char *)address->data);
     
     c_readfromcache (address,cachepath,options.size,checksignal);
+
+    syslog (LOG_INFO,"closing cache %s @ %s for reading",(char *)cachepath->data,(char *)address->data);
     
     bdestroy (address);
     bdestroy (cachepath);
   }
+  
+  if (options.waddress && !options.raddress) {
+
+    bstring address = bfromcstr(options.waddress);
+    bstring cachepath = bfromcstr(options.cache);
+
+    syslog (LOG_INFO,"writing cache from %s @ %s",(char *)cachepath->data,(char *)address->data);
+
+    c_writefromcache (address,cachepath,options.size,checksignal);
+
+    syslog (LOG_INFO,"closing cache %s @ %s for writing",(char *)cachepath->data,(char *)address->data);
+
+    bdestroy (address);
+    bdestroy (cachepath);
+  }
+
+  if (options.waddress && options.raddress) {
+
+    pthread_t read_t;
+    if (pthread_create(&read_t,NULL,readcache,(void *)&options) != 0) {
+      syslog (LOG_ERR,"read thread creation error");
+      abort();
+    }
+
+    bstring address = bfromcstr(options.waddress);
+    bstring cachepath = bfromcstr(options.cache);
+
+    syslog (LOG_INFO,"writing cache from %s @ %s",(char *)cachepath->data,(char *)address->data);
+
+    c_writefromcache (address,cachepath,options.size,checksignal);
+
+    syslog (LOG_INFO,"closing cache %s @ %s for writing",(char *)cachepath->data,(char *)address->data);
+
+    bdestroy (address);
+    bdestroy (cachepath);
+
+    pthread_join (read_t,NULL);
+  }
+
 
   closelog ();
 

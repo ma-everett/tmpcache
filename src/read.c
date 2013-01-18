@@ -83,30 +83,23 @@ void c_readfromcache (bstring address, bstring cachepath, int maxsize, c_signalf
   int r = -1;
 
 #if defined HAVE_LIBCDB
-
-  bstring fileformat = bmidstr (cachepath,blength(cachepath) - 4, 4);
-  bstring cdbformat = bfromcstr(".cdb");
+ 
   cdb_t cdb;
-  int usecdb = 0;
-  if (biseq(fileformat,cdbformat)) {
+  int usecdb = c_iscdbfile(cachepath);
+  if (usecdb) {
 
     int fd = open((const char*)cachepath->data,O_RDONLY);
     if (!fd) {
       
       syslog(LOG_ERR,"%s, cdb init error",__FUNCTION__);
-      bdestroy (fileformat);
-      bdestroy (cdbformat);
       goto exitearly;
     }
     
     cdb_init(&cdb,fd);
     readf = readcontentsfromcdb;
     hint = (void *)&cdb;
-    usecdb = 1;
   }
 
-  bdestroy (fileformat);
-  bdestroy (cdbformat);
 #endif
 
   void *ctx = xs_init();

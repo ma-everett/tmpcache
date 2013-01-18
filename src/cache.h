@@ -22,9 +22,15 @@ void *c_malloc (unsigned int size,void *hint);
 void  c_free   (void *p,void *hint);
 
 typedef unsigned int (*c_readf) (void *,bstring,char *,unsigned int);
+typedef unsigned int (*c_writef) (bstring,char *,unsigned int,char *,unsigned int);
 typedef unsigned int (*c_signalf) (void);
 
-void c_readfromcache (bstring address,bstring cachepath,int maxsize,c_signalf signal);
+#if defined HAVE_LIBCDB
+int c_iscdbfile (bstring cachepath);
+#endif
 
+
+void c_readfromcache (bstring address,bstring cachepath,int maxsize,c_signalf signal);
+void c_writefromcache (bstring address,bstring cachepath,int maxsize,c_signalf signal);
 
 #endif

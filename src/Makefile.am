@@ -1,2 +1,3 @@
-bin_PROGRAMS = tmpcache
-tmpcache_SOURCES = bstrlib/bstrlib.c read.c main.c cache.h utility.c
+bin_PROGRAMS = tmpcache client
+tmpcache_SOURCES = bstrlib/bstrlib.c read.c write.c main.c cache.h utility.c
+client_SOURCES = bstrlib/bstrlib.c client.c tmpcache.c tmpcache.h PMurHash.c PMurHash.h
