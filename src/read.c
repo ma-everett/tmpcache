@@ -30,11 +30,14 @@ unsigned int readcontentsfromfile (void *hint,bstring key,char *data,unsigned in
       
     } else {
 
-      syslog(LOG_DEBUG,"%> looking up %s, miss",__FUNCTION__,(const char *)key->data);
+      syslog(LOG_DEBUG,"%s> looking up %s, miss",__FUNCTION__,(const char *)key->data);
     }
 
     fclose (fp);
-  }
+  } else {
+
+    syslog(LOG_DEBUG,"%s> looking up %s, miss",__FUNCTION__,(const char *)key->data);
+  }  
 
   return (bufsize < dsize) ? bufsize : dsize;
 }

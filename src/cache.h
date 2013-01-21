@@ -22,7 +22,7 @@ void *c_malloc (unsigned int size,void *hint);
 void  c_free   (void *p,void *hint);
 
 typedef unsigned int (*c_readf) (void *,bstring,char *,unsigned int);
-typedef unsigned int (*c_writef) (bstring,char *,unsigned int,char *,unsigned int);
+typedef unsigned int (*c_writef) (bstring,bstring,char *,unsigned int,unsigned int);
 typedef unsigned int (*c_signalf) (void);
 
 #if defined HAVE_LIBCDB

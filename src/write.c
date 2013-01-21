@@ -7,24 +7,30 @@
 #include <syslog.h>
 
 
-unsigned int writecontentstofile(bstring key,char *data,unsigned int dsize,char *tmp,unsigned int maxsize)
+unsigned int writecontentstofile(bstring key,bstring cachepath,char *data,unsigned int dsize,unsigned int maxsize)
 {
-  int fp = mkstemp (tmp);
+  bstring tmp = bformat("%s/temp_XXXXXX",(char *)cachepath->data);
+ 
+  int fp = mkstemp ((char *)tmp->data); 
+ 
   int r = 0;
   if (fp) {
 
     write(fp,data,(dsize < maxsize) ? dsize : maxsize);
     close(fp);
+    printf("%s %s -> %s\n",__FUNCTION__,(char *)tmp->data, (char *)key->data);
 
-    r = rename(tmp,(char *)key->data);
-    syslog(LOG_DEBUG,"%s renaming %s to %s (%s)",tmp,(char *)key->data,(r == 0) ? "pass" : "fail");
+    r = rename((char *)tmp->data,(char *)key->data);
+    syslog(LOG_DEBUG,"%s renaming %s to %s (%s)",(char *)tmp->data,(char *)key->data,(r == 0) ? "pass" : "fail");
   }
+
+  bdestroy (tmp);
 
   return dsize;
 }
 
 #if defined HAVE_LIBCDB
-unsigned int writecontentstocdb(bstring key,char *data,unsigned int dsize,char *tmp,unsigned int maxsize)
+unsigned int writecontentstocdb(bstring key,bstring cachepath,char *data,unsigned int dsize,unsigned int maxsize)
 {
   return dsize; /* no nothing */
 }
@@ -38,9 +44,6 @@ void c_writefromcache (bstring address,bstring cachepath,int maxsize,c_signalf s
 {
   int sbufsize = 256 - (blength(cachepath) + 2);
   char sbuf[ sbufsize ];
-  bstring tmp = bformat("%s/temp_XXXXXX\0",(const char *)cachepath);
-  char tempbuf[ blength(tmp) ];
-  memcpy (&tempbuf[0],tmp->data,blength(tmp));
 
   c_writef writef = writecontentstofile;
 
@@ -64,7 +67,7 @@ void c_writefromcache (bstring address,bstring cachepath,int maxsize,c_signalf s
     goto exitearly;
   }
 
-  void *sock = xs_socket (ctx,XS_XREP);
+  void *sock = xs_socket (ctx,XS_PULL);
   if (!sock) {
     
     syslog(LOG_ERR,"%s! %s",__FUNCTION__,xs_strerror(xs_errno()));
@@ -106,9 +109,10 @@ void c_writefromcache (bstring address,bstring cachepath,int maxsize,c_signalf s
     r = xs_recvmsg (sock,&msg_part,0);
     xs_assert (r != -1);
 
-    memset (&sbuf[0],'\0',256);
+    memset (&sbuf[0],'\0',sbufsize);
     memcpy (&sbuf[0],xs_msg_data(&msg_key),xs_msg_size(&msg_key));
 
+    
 #if defined HAVE_LIBCDB
     bstring key = (usecdb) ? bfromcstr(sbuf) : bformat("%s/%s\0",(const char *)cachepath->data,sbuf);
 #else
@@ -116,23 +120,22 @@ void c_writefromcache (bstring address,bstring cachepath,int maxsize,c_signalf s
 #endif
 
     int size = xs_msg_size (&msg_part);
-    
-    if (size == 0) {/*FIXME*/
+
+    printf("%s %s (%s) -> %d\n",__FUNCTION__,xs_msg_data(&msg_key),(char *)key->data,xs_msg_size(&msg_part));
+
+    if (size == 0) {
 
       continue;
     }
 
-    if (!usecdb) {
-      
-      memcpy (&tempbuf[0],tmp->data,blength(tmp));
-    }
+    
+    int dsize = (*writef)(key,cachepath,xs_msg_data(&msg_part),xs_msg_size(&msg_part),maxsize);
+    printf("%s %s -> %d\n",__FUNCTION__,(char *)key->data,dsize);
 
-    r = writef(key,xs_msg_data(&msg_part),xs_msg_size(&msg_part),tempbuf,maxsize);
 
     bdestroy (key);
   }
 
-  bdestroy (tmp);
 
   xs_msg_close (&msg_key);
   xs_msg_close (&msg_part);
@@ -158,4 +161,3 @@ void c_writefromcache (bstring address,bstring cachepath,int maxsize,c_signalf s
   return;
 }
     
- 

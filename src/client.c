@@ -229,6 +229,8 @@ int main(void) {
   r = tmpcache_read (ctx,"foo",3,buffer,1024 * 1024);
   assert(r != -1);
 
+  
+
   void *data = malloc(50);
   memset(data,'1',50);
 
@@ -236,6 +238,7 @@ int main(void) {
   assert(r != -1);
   printf("--> write %d\n",r);
 
+  
   
   bstring name;
   int i=0;
@@ -254,8 +257,8 @@ int main(void) {
 
 
   free (buffer);
-
-  /* ================= */
+  
+  
   sleep(2);
   r = tmpcache_disconnect(ctx);
   assert (r);
