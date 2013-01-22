@@ -29,8 +29,13 @@ typedef unsigned int (*c_signalf) (void);
 int c_iscdbfile (bstring cachepath);
 #endif
 
+int c_filterkey (bstring key);
 
 void c_readfromcache (bstring address,bstring cachepath,int maxsize,c_signalf signal);
 void c_writefromcache (bstring address,bstring cachepath,int maxsize,c_signalf signal);
+void c_snapshotcache (bstring address,bstring cachepath);
+
+
+
 
 #endif

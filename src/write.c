@@ -111,11 +111,20 @@ void c_writefromcache (bstring address,bstring cachepath,int maxsize,c_signalf s
 
     memset (&sbuf[0],'\0',sbufsize);
     memcpy (&sbuf[0],xs_msg_data(&msg_key),xs_msg_size(&msg_key));
+
+    bstring key = bfromcstr(sbuf);
+    int filtered = c_filterkey(key);
+    
+    if (!filtered) {
+      syslog (LOG_DEBUG,"%s! %s filtered",__FUNCTION__,(char *)key->data);
+      bdestroy (key);
+      continue;
+    }
     
 #if defined HAVE_LIBCDB
-    bstring key = (usecdb) ? bfromcstr(sbuf) : bformat("%s/%s\0",(const char *)cachepath->data,sbuf);
+    key = (usecdb) ? bfromcstr(sbuf) : bformat("%s/%s\0",(const char *)cachepath->data,sbuf);
 #else
-    bstring key = bformat("%s/%s\0",(const char *)cachepath->data,sbuf);
+    key = bformat("%s/%s\0",(const char *)cachepath->data,sbuf);
 #endif
 
     int size = xs_msg_size (&msg_part);

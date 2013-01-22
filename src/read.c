@@ -34,6 +34,7 @@ unsigned int readcontentsfromfile (void *hint,bstring key,char *data,unsigned in
     }
 
     fclose (fp);
+
   } else {
 
     syslog(LOG_DEBUG,"%s> looking up %s, miss",__FUNCTION__,(const char *)key->data);
@@ -164,14 +165,26 @@ void c_readfromcache (bstring address, bstring cachepath, int maxsize, c_signalf
     memset (&sbuf[0],'\0',256);
     memcpy (&sbuf[0],xs_msg_data(&msg_key),xs_msg_size(&msg_key));
 
-#if defined HAVE_LIBCDB
-    bstring key = (usecdb) ? bfromcstr(sbuf) : bformat("%s/%s\0",(const char *)cachepath->data,sbuf);
-#else 
-    bstring key = bformat ("%s/%s\0",(const char *)cachepath->data,sbuf);
-#endif
+    bstring key = bfromcstr(sbuf);
+    int filtered = c_filterkey(key);
+    /* filter */
+    if (!filtered) 
+      syslog(LOG_DEBUG,"%s! %s filtered\n",__FUNCTION__,(char *)key->data);
+  
 
-    void *data = (void *)c_malloc (maxsize,NULL);
-    unsigned int rsize = (*readf)(hint,key,data,maxsize);
+#if defined HAVE_LIBCDB
+    key = (usecdb) ? bfromcstr(sbuf) : bformat("%s/%s\0",(const char *)cachepath->data,sbuf);
+#else 
+    key = bformat ("%s/%s\0",(const char *)cachepath->data,sbuf);
+#endif
+    
+    unsigned int rsize = 0;
+    void *data = NULL;
+
+    if (filtered) {
+      data = (void *)c_malloc (maxsize,NULL);
+      rsize = (*readf)(hint,key,data,maxsize);
+    }
 
     if (rsize)
       xs_msg_init_data (&msg_part,data,rsize,c_free,NULL);
