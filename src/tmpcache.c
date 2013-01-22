@@ -543,14 +543,17 @@ int lazypirate_read (void *_ctx,const char *key,const int klen,void *data,int dl
 
   /* wait for timeout */
 
-  for (;;) {
-
-    count = xs_poll (pitems,1,(1000 * 10));
+  count = xs_poll (pitems,1,(1000 * 10));
     
-    if (pitems[0].revents & XS_POLLIN) {
-      break;
-    }
+  if (pitems[0].revents & XS_POLLIN) {
+    
+    xs_msg_t msg_part;
+    xs_msg_init (&msg_part);
+
+    
+    xs_msg_close (&msg_part);
   }
+
 
   /* if failure, shutdown connection and retry? or fail */
 

@@ -111,7 +111,6 @@ void c_writefromcache (bstring address,bstring cachepath,int maxsize,c_signalf s
 
     memset (&sbuf[0],'\0',sbufsize);
     memcpy (&sbuf[0],xs_msg_data(&msg_key),xs_msg_size(&msg_key));
-
     
 #if defined HAVE_LIBCDB
     bstring key = (usecdb) ? bfromcstr(sbuf) : bformat("%s/%s\0",(const char *)cachepath->data,sbuf);
@@ -120,22 +119,17 @@ void c_writefromcache (bstring address,bstring cachepath,int maxsize,c_signalf s
 #endif
 
     int size = xs_msg_size (&msg_part);
-
-    printf("%s %s (%s) -> %d\n",__FUNCTION__,xs_msg_data(&msg_key),(char *)key->data,xs_msg_size(&msg_part));
-
+  
     if (size == 0) {
-
+      
+      r = remove((const char *)key->data); /*FIXME*/
+      syslog (LOG_DEBUG,"%s> deleting %s",__FUNCTION__,(char *)key->data);
       continue;
     }
-
     
     int dsize = (*writef)(key,cachepath,xs_msg_data(&msg_part),xs_msg_size(&msg_part),maxsize);
-    printf("%s %s -> %d\n",__FUNCTION__,(char *)key->data,dsize);
-
-
     bdestroy (key);
   }
-
 
   xs_msg_close (&msg_key);
   xs_msg_close (&msg_part);
