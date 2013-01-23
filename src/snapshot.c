@@ -92,17 +92,26 @@ void writecontentstocdbfile (DIR *d, bstring address, bstring rootpath)
   struct dirent *dir;
   cdbm_t cdb;
   
-  int fd = open((const char *)rootpath->data, O_RDWR|O_CREAT);
-  if (!fd) {
+  bstring tmpaddress = bformat("%s.tmp",(char *)address->data);
+
+  int fd = open((char *)tmpaddress->data, O_RDWR|O_CREAT);
+  if (fd == -1) {
     
+    syslog (LOG_ERR,"%s, cdb (file %s) open error",__FUNCTION__,(char)tmpaddress->data);
+    return;
+  }
+  
+  if (cdb_make_start(&cdb,fd) != 0) {
+
+    close(fd);
     syslog (LOG_ERR,"%s, cdb init error",__FUNCTION__);
     return;
   }
   
-  cdb_make_start(&cdb,fd);
-  
   size_t bufsize = 0;
   char *filebuffer = NULL;
+  int r = 0;
+  int numofwrites = 0;
 
   while ((dir = readdir(d)) != NULL) {
 
@@ -115,7 +124,7 @@ void writecontentstocdbfile (DIR *d, bstring address, bstring rootpath)
     stat((const char *)filename->data,&statbuf);
     
     if ( ! S_ISDIR(statbuf.st_mode)) {
-
+    
       FILE *fp = fopen((const char *)filename->data,"r");
       if (fp) {
 	long cpos = ftell(fp);
@@ -129,15 +138,32 @@ void writecontentstocdbfile (DIR *d, bstring address, bstring rootpath)
 	fclose(fp);
       }
 
-      cdb_make_add(&cdb,dir->d_name,strlen(dir->d_name),filebuffer,bufsize);
+      r = cdb_make_add(&cdb,dir->d_name,strlen(dir->d_name),filebuffer,bufsize);
+      c_free (filebuffer,NULL);
+
+      if (r == 0) {
+	numofwrites ++; 
+	syslog (LOG_DEBUG,"%s %s --> cdb, %db",__FUNCTION__,(char *)filename->data,bufsize);
+
+      } else {
+
+	syslog (LOG_DEBUG,"%s %s --> error, %s %db",__FUNCTION__,(char *)filename->data,dir->d_name,bufsize);
+      }
     }
   }
  
-  cdb_make_finish(&cdb);
+  if (cdb_make_finish(&cdb) != 0) {
+    
+    syslog (LOG_ERR,"%s unable to finish cdb file %s",__FUNCTION__,(char *)address->data);
+  }
+  
+  close (fd); /*FIXME*/
+
+  rename ((char *)tmpaddress->data,(char *)address->data); /*FIXME */
+  
+  syslog (LOG_DEBUG,"%s number of writes to cdb file %d",__FUNCTION__,numofwrites);
 }
 #endif
-
-
 
 
 

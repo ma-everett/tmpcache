@@ -180,6 +180,23 @@ int main (int argc, char **argv)
 
   openlog (NULL,LOG_PID|LOG_NDELAY,LOG_USER);
 
+  if (options.snapshot) {
+
+    bstring address = bfromcstr(options.snapshot);
+    bstring cachepath = bfromcstr(options.cache);
+
+    syslog (LOG_INFO,"snapshoting cache from %s to %s",(char *)cachepath->data,(char *)address->data);
+    
+    c_snapshotcache (address,cachepath);
+
+    syslog (LOG_INFO,"done snapshoting cache from %s to %s",(char *)cachepath->data,(char *)address->data);
+
+    bdestroy (address);
+    bdestroy (cachepath);
+    
+    goto finish;
+  }
+
   if (options.raddress && !options.waddress) {
 
     bstring address = bfromcstr(options.raddress);
@@ -193,6 +210,8 @@ int main (int argc, char **argv)
     
     bdestroy (address);
     bdestroy (cachepath);
+
+    goto finish;
   }
   
   if (options.waddress && !options.raddress) {
@@ -208,6 +227,8 @@ int main (int argc, char **argv)
 
     bdestroy (address);
     bdestroy (cachepath);
+
+    goto finish;
   }
 
   if (options.waddress && options.raddress) {
@@ -233,6 +254,8 @@ int main (int argc, char **argv)
     pthread_join (read_t,NULL);
   }
 
+
+ finish:
 
   closelog ();
 
