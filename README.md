@@ -1,6 +1,6 @@
 tmpcache
 ========
-version 0
+version 0 | A Work in Progress
 ---------
 
 In memory temporary cache written in C with 
@@ -16,15 +16,15 @@ Build and Install
 You will need [Crossroads I/O library](http://www.crossroads.io) installed. 
 Optionally you may want [Tiny CDB library](http://www.corpit.ru/mjt/tinycdb.html) installed for snapshotting. 
 
-> ./configure
-> make
+    > ./configure
+    > make
 
 Currently no install target, as there is no production ready code to use.
 
 Running
 ----------------
 
-> tmpcache -m 64MB -s 1MB -w [waddress] -r [raddress] -c [dir]
+    > tmpcache -m 64MB -s 1MB -w [waddress] -r [raddress] -c [dir]
 
 Where _waddress_ (for writing) and _raddress_ (for reading) is 
 an Crossroads adddress in one of the following forms.
@@ -46,14 +46,14 @@ Running with Tmpfs
 -------------------
 
 Create a *tmpfs* 
-> sudo mount -t tmpfs -o size=64m tmpfs /srv/tmpcache
-> sudo chown tmpcache:tmpcache /srv/tmpcache
+    > sudo mount -t tmpfs -o size=64m tmpfs /srv/tmpcache
+    > sudo chown tmpcache:tmpcache /srv/tmpcache
 
 Run tmpcache instance for writing on an inter-process communication address.
-> tmpcache -m 64MB -s 1MB -w ipc:///tmp/run/tmpcache.write -c /srv/tmpcache &
+    > tmpcache -m 64MB -s 1MB -w ipc:///tmp/run/tmpcache.write -c /srv/tmpcache &
 
 Now run a read instace on a TCP network address
-> tmpcache -r tcp://localhost:9898 -c /srv/tmpcache &
+    > tmpcache -r tcp://localhost:9898 -c /srv/tmpcache &
  
 *tmpcache* can be stopped by sending a TERM signal. 
 
@@ -65,16 +65,16 @@ files, however *tmpcache* provides to alternative methods of creating a
 snaphot/copy of the cache. The first is to directly write the contents of
 the cache to another cache.
 
-> tmpcache -s 1 -c [dir] -w [destination]
+    > tmpcache -s 1 -c [dir] -w [destination]
 
 Where _destination_ is another cache. The second method is to create a 
 [cdb](http://www.corpit.ru/mjt/tinycdb.html#intro) database.
 
-> tmpcache -s [filename].cdb -c [dir]
+    > tmpcache -s [filename].cdb -c [dir]
 
 Where _filename_ is an absolute path. This will create a database file which
 we can then create a readonly cache. 
 
-> tmpcache -c [filename].cdb -r [raddress]
+    > tmpcache -c [filename].cdb -r [raddress]
  
  
