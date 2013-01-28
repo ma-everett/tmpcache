@@ -46,13 +46,16 @@ Running with Tmpfs
 -------------------
 
 Create a *tmpfs* 
+
     > sudo mount -t tmpfs -o size=64m tmpfs /srv/tmpcache
     > sudo chown tmpcache:tmpcache /srv/tmpcache
 
 Run tmpcache instance for writing on an inter-process communication address.
+
     > tmpcache -m 64MB -s 1MB -w ipc:///tmp/run/tmpcache.write -c /srv/tmpcache &
 
 Now run a read instace on a TCP network address
+
     > tmpcache -r tcp://localhost:9898 -c /srv/tmpcache &
  
 *tmpcache* can be stopped by sending a TERM signal. 
