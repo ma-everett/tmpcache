@@ -87,19 +87,19 @@ We can use the included client to write and read from a *tmpcache*. With an
 existing *tmpcache* service running, we can write the cache in the following
 ways:
 
-    > client -w foo -a ipc:///tmp/run/tmpcache.write
+    > tmpclient -w foo -a ipc:///tmp/run/tmpcache.write
     > hello there! <enter>
 
 Or directly from a file
 
-    > cat foo.txt | client -w foo -a ipc:///tmp/run/tmpcache.write
+    > cat foo.txt | tmpclient -w foo -a ipc:///tmp/run/tmpcache.write
 
 Reading from an existing cache:
 
-    > client -r foo -a ipc:///tmp/run/tmpcache.read
+    > tmpclient -r foo -a ipc:///tmp/run/tmpcache.read
     > hello there!
 
 Or directly into a file
 
-    > client -r foo -a ipc:///tmp/run/tmpcache.read > foo.txt 
+    > tmpclient -r foo -a ipc:///tmp/run/tmpcache.read > foo.txt 
 
