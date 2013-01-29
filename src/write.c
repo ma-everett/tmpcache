@@ -9,7 +9,7 @@
 
 unsigned int writecontentstofile(bstring key,bstring cachepath,char *data,unsigned int dsize,unsigned int maxsize)
 {
-  bstring tmp = bformat("%s/temp_XXXXXX",(char *)cachepath->data);
+  bstring tmp = bformat("%s/temp_XXXXXX",btocstr(cachepath));
  
   int fp = mkstemp ((char *)tmp->data); 
  
@@ -18,10 +18,10 @@ unsigned int writecontentstofile(bstring key,bstring cachepath,char *data,unsign
 
     write(fp,data,(dsize < maxsize) ? dsize : maxsize);
     close(fp);
-    printf("%s %s -> %s\n",__FUNCTION__,(char *)tmp->data, (char *)key->data);
+    printf("%s %s -> %s\n",__FUNCTION__,btocstr(tmp), btocstr(key));
 
     r = rename((char *)tmp->data,(char *)key->data);
-    syslog(LOG_DEBUG,"%s renaming %s to %s (%s)",(char *)tmp->data,(char *)key->data,(r == 0) ? "pass" : "fail");
+    syslog(LOG_DEBUG,"%s renaming %s to %s (%s)",btocstr(tmp),btocstr(key),(r == 0) ? "pass" : "fail");
   }
 
   bdestroy (tmp);
@@ -75,7 +75,7 @@ void c_writefromcache (bstring address,bstring cachepath,int maxsize,c_signalf s
     goto exitearly;
   }
 
-  r = xs_bind (sock,(const char *)address->data);
+  r = xs_bind (sock,btocstr(address));
   if (r == -1) {
 
     syslog (LOG_ERR,"%s! %s",__FUNCTION__,xs_strerror(xs_errno()));
@@ -104,35 +104,39 @@ void c_writefromcache (bstring address,bstring cachepath,int maxsize,c_signalf s
     if (count == 0)
       continue;
 
+    printf("message recv'd\n");
+
     r = xs_recvmsg (sock,&msg_key,0);
     xs_assert (r != -1);
     r = xs_recvmsg (sock,&msg_part,0);
     xs_assert (r != -1);
 
-    memset (&sbuf[0],'\0',sbufsize);
+    memset (&sbuf[0],'\0',sbufsize); /*FIXME, possible overflow*/
     memcpy (&sbuf[0],xs_msg_data(&msg_key),xs_msg_size(&msg_key));
-
+ 
+    
     bstring key = bfromcstr(sbuf);
     int filtered = c_filterkey(key);
-    
+        
     if (!filtered) {
-      syslog (LOG_DEBUG,"%s! %s filtered",__FUNCTION__,(char *)key->data);
+      syslog (LOG_DEBUG,"%s! %s filtered",__FUNCTION__,btocstr(key));
       bdestroy (key);
       continue;
     }
     
 #if defined HAVE_LIBCDB
-    key = (usecdb) ? bfromcstr(sbuf) : bformat("%s/%s\0",(const char *)cachepath->data,sbuf);
+    key = (usecdb) ? bfromcstr(sbuf) : bformat("%s/%s\0",btocstr(cachepath),sbuf);
 #else
-    key = bformat("%s/%s\0",(const char *)cachepath->data,sbuf);
+    key = bformat("%s/%s\0",btocstr(cachepath),sbuf);
 #endif
 
     int size = xs_msg_size (&msg_part);
   
-    if (size == 0) {
-      
-      r = remove((const char *)key->data); /*FIXME*/
-      syslog (LOG_DEBUG,"%s> deleting %s",__FUNCTION__,(char *)key->data);
+    if (size == 0 && !usecdb) {
+      printf("deleting %s\n",(char *)key->data);
+
+      r = remove(btocstr(key)); /*FIXME*/
+      syslog (LOG_DEBUG,"%s> deleting %s",__FUNCTION__,btocstr(key));
       continue;
     }
     

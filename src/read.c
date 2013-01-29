@@ -12,7 +12,7 @@ unsigned int readcontentsfromfile (void *hint,bstring key,char *data,unsigned in
 {
 
   unsigned int bufsize = 0;
-  FILE *fp = fopen((const char *)key->data,"r");
+  FILE *fp = fopen(btocstr(key),"r");
   if (fp) {
     
     long cpos = ftell(fp);
@@ -25,19 +25,19 @@ unsigned int readcontentsfromfile (void *hint,bstring key,char *data,unsigned in
       fread (data,(bufsize < dsize) ? bufsize : dsize,1,fp);
       int Kb = (bufsize <= 1024) ? bufsize : bufsize / 1024;
 
-      syslog(LOG_DEBUG,"%s> looking up %s, %d%s",__FUNCTION__,(const char *)key->data,
+      syslog(LOG_DEBUG,"%s> looking up %s, %d%s",__FUNCTION__,btocstr(key),
 	     Kb, (bufsize <= 1024) ? "b" : "Kb");
       
     } else {
 
-      syslog(LOG_DEBUG,"%s> looking up %s, miss",__FUNCTION__,(const char *)key->data);
+      syslog(LOG_DEBUG,"%s> looking up %s, miss",__FUNCTION__,btocstr(key));
     }
 
     fclose (fp);
 
   } else {
 
-    syslog(LOG_DEBUG,"%s> looking up %s, miss",__FUNCTION__,(const char *)key->data);
+    syslog(LOG_DEBUG,"%s> looking up %s, miss",__FUNCTION__,btocstr(key));
   }  
 
   return (bufsize < dsize) ? bufsize : dsize;
@@ -50,7 +50,7 @@ unsigned int readcontentsfromcdb (void *hint,bstring key,char *data,unsigned int
   cdb_t *cdb = (cdb_t *)hint;
   unsigned int vlen = 0, vpos = 0;
 
-  if (cdb_find(cdb,(const char *)key->data,blength(key)) > 0) {
+  if (cdb_find(cdb,btocstr(key),blength(key)) > 0) {
 
     vpos = cdb_datapos(cdb);
     vlen = cdb_datalen(cdb);
@@ -58,12 +58,12 @@ unsigned int readcontentsfromcdb (void *hint,bstring key,char *data,unsigned int
     cdb_read (cdb,data,(vlen < dsize) ? vlen : dsize,vpos);
     int Kb = (vlen < 1024) ? vlen : vlen / 1024;
 
-    syslog(LOG_DEBUG,"%s> looking up %s, %d%s\n",__FUNCTION__,(const char *)key->data,
+    syslog(LOG_DEBUG,"%s> looking up %s, %d%s\n",__FUNCTION__,btocstr(key),
 	   Kb, (vlen <= 1024) ? "b" : "Kb");
 
   } else {
 
-    syslog(LOG_DEBUG,"%s> looking up %s, miss\n",__FUNCTION__,(const char *)key->data);
+    syslog(LOG_DEBUG,"%s> looking up %s, miss\n",__FUNCTION__,btocstr(key));
   }
 
   return (vlen < dsize) ? vlen : dsize;
@@ -92,7 +92,7 @@ void c_readfromcache (bstring address, bstring cachepath, int maxsize, c_signalf
   int usecdb = c_iscdbfile(cachepath);
   if (usecdb) {
 
-    int fd = open((const char*)cachepath->data,O_RDONLY);
+    int fd = open(btocstr(cachepath),O_RDONLY);
     if (!fd) {
       
       syslog(LOG_ERR,"%s, cdb init error",__FUNCTION__);
@@ -121,7 +121,7 @@ void c_readfromcache (bstring address, bstring cachepath, int maxsize, c_signalf
     goto exitearly;
   }
 
-  r = xs_bind (sock,(const char *)address->data);
+  r = xs_bind (sock,btocstr(address));
   if (r == -1) {
 
     syslog(LOG_ERR,"%s! %s",__FUNCTION__,xs_strerror(xs_errno()));
@@ -169,13 +169,13 @@ void c_readfromcache (bstring address, bstring cachepath, int maxsize, c_signalf
     int filtered = c_filterkey(key);
     /* filter */
     if (!filtered) 
-      syslog(LOG_DEBUG,"%s! %s filtered\n",__FUNCTION__,(char *)key->data);
+      syslog(LOG_DEBUG,"%s! %s filtered\n",__FUNCTION__,btocstr(key));
   
 
 #if defined HAVE_LIBCDB
-    key = (usecdb) ? bfromcstr(sbuf) : bformat("%s/%s\0",(const char *)cachepath->data,sbuf);
+    key = (usecdb) ? bfromcstr(sbuf) : bformat("%s/%s\0",btocstr(cachepath),sbuf);
 #else 
-    key = bformat ("%s/%s\0",(const char *)cachepath->data,sbuf);
+    key = bformat ("%s/%s\0",btocstr(cachepath),sbuf);
 #endif
     
     unsigned int rsize = 0;

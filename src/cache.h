@@ -7,7 +7,9 @@
 #include "../config.h"
 
 #include <stdlib.h>
+
 #include "bstrlib/bstrlib.h"
+#define btocstr(bs) (char *)(bs)->data
 
 #if defined HAVE_LIBCDB
 #include <cdb.h>

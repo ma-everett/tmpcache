@@ -81,3 +81,4 @@ we can then create a readonly cache.
     > tmpcache -c [filename].cdb -r [raddress]
  
  
+<script src="https://gist.github.com/4658985.js"></script>

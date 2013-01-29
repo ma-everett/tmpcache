@@ -35,14 +35,14 @@ void writecontentstoserver (DIR *d, bstring address, bstring rootpath)
     if (strcmp(dir->d_name, ".")== 0 || strcmp(dir->d_name,"..") == 0)
       continue;
     
-    bstring filename = bformat("%s/%s",(const char *)rootpath->data,dir->d_name);
+    bstring filename = bformat("%s/%s",btocstr(rootpath),dir->d_name);
     
     struct stat statbuf;
-    stat((const char *)filename->data,&statbuf);
+    stat(btocstr(filename),&statbuf);
     
     if ( ! S_ISDIR(statbuf.st_mode)) {
 
-      FILE *fp = fopen((const char *)filename->data,"r");
+      FILE *fp = fopen(btocstr(filename),"r");
       if (fp) {
 	long cpos = ftell(fp);
 	fseek(fp,0,SEEK_END);
@@ -92,12 +92,12 @@ void writecontentstocdbfile (DIR *d, bstring address, bstring rootpath)
   struct dirent *dir;
   cdbm_t cdb;
   
-  bstring tmpaddress = bformat("%s.tmp",(char *)address->data);
+  bstring tmpaddress = bformat("%s.tmp",btocstr(address));
 
   int fd = open((char *)tmpaddress->data, O_RDWR|O_CREAT);
   if (fd == -1) {
     
-    syslog (LOG_ERR,"%s, cdb (file %s) open error",__FUNCTION__,(char)tmpaddress->data);
+    syslog (LOG_ERR,"%s, cdb (file %s) open error",__FUNCTION__,btocstr(tmpaddress));
     return;
   }
   
@@ -118,14 +118,14 @@ void writecontentstocdbfile (DIR *d, bstring address, bstring rootpath)
     if (strcmp(dir->d_name, ".")== 0 || strcmp(dir->d_name,"..") == 0)
       continue;
     
-    bstring filename = bformat("%s/%s",(const char *)rootpath->data,dir->d_name);
+    bstring filename = bformat("%s/%s",btocstr(rootpath),dir->d_name);
     
     struct stat statbuf;
-    stat((const char *)filename->data,&statbuf);
+    stat(btocstr(filename),&statbuf);
     
     if ( ! S_ISDIR(statbuf.st_mode)) {
     
-      FILE *fp = fopen((const char *)filename->data,"r");
+      FILE *fp = fopen(btocstr(filename),"r");
       if (fp) {
 	long cpos = ftell(fp);
 	fseek(fp,0,SEEK_END);
@@ -143,23 +143,23 @@ void writecontentstocdbfile (DIR *d, bstring address, bstring rootpath)
 
       if (r == 0) {
 	numofwrites ++; 
-	syslog (LOG_DEBUG,"%s %s --> cdb, %db",__FUNCTION__,(char *)filename->data,bufsize);
+	syslog (LOG_DEBUG,"%s %s --> cdb, %db",__FUNCTION__,btocstr(filename),bufsize);
 
       } else {
 
-	syslog (LOG_DEBUG,"%s %s --> error, %s %db",__FUNCTION__,(char *)filename->data,dir->d_name,bufsize);
+	syslog (LOG_DEBUG,"%s %s --> error, %s %db",__FUNCTION__,btocstr(filename),dir->d_name,bufsize);
       }
     }
   }
  
   if (cdb_make_finish(&cdb) != 0) {
     
-    syslog (LOG_ERR,"%s unable to finish cdb file %s",__FUNCTION__,(char *)address->data);
+    syslog (LOG_ERR,"%s unable to finish cdb file %s",__FUNCTION__,btocstr(address));
   }
   
   close (fd); /*FIXME*/
 
-  rename ((char *)tmpaddress->data,(char *)address->data); /*FIXME */
+  rename (btocstr(tmpaddress),btocstr(address)); /*FIXME */
   
   syslog (LOG_DEBUG,"%s number of writes to cdb file %d",__FUNCTION__,numofwrites);
 }
@@ -171,9 +171,9 @@ void c_snapshotcache (bstring address,bstring cachepath)
 {
   DIR *d;
  
-  d = opendir((const char *)cachepath->data);
+  d = opendir(btocstr(cachepath));
   if (!d) {
-    syslog(LOG_ERR,"%s! error opening directory %s\n",__FUNCTION__,(const char *)cachepath->data);
+    syslog(LOG_ERR,"%s! error opening directory %s\n",__FUNCTION__,btocstr(cachepath));
     return;
   }
 

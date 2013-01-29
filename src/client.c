@@ -29,16 +29,17 @@ static char argp_doc[] = "tmpcache, a filesystem cache using message passing";
 static char args_doc[] = ""; /*FIXME*/
 
 static struct argp_option argp_options[] = {
-  {"key",      'k', "key",  0, "Key, or label for data"},
-  {"write",    'w', "ADDR", 0, "Write address for cache"},
-  {"read",     'r', "ADDR", 0, "Read address for cache"},
+  {"read",      'r', "key",  0, "Read key from cache"},
+  {"write",     'w', "key",  0, "Write key and value to cache"},
+  {"delete",    'd', "key",  0, "Delete key from cache"},
+  {"address",    'a', "ADDR", 0, "Address for cache"},
   {0}
 };
 
 typedef struct arguments {
 
-  char *waddress;
-  char *raddress;
+  unsigned int mode;
+  char *address;
   char *key;
 
 } arguments_t;
@@ -48,22 +49,26 @@ static error_t parseoptions (int key, char *arg, struct argp_state *state)
   arguments_t *arguments = state->input;
 
   switch(key) {
-  case 'k' :
+
+  case 'r' :
     arguments->key = arg;
+    arguments->mode = 0;
     break;
   case 'w' :
+    arguments->key = arg;
+    arguments->mode = 1;
+    break;
+  case 'd' :
+    arguments->key = arg;
+    arguments->mode = 2;
+    break;
+  case 'a' :
     if (arg)
-      arguments->waddress = arg; /*FIXME:check address is correct*/
+      arguments->address = arg; 
     else
       argp_usage(state);
     break;
-  case 'r' :
-    if (arg)
-      arguments->raddress = arg; /*FIXME:check address is correct*/
-    else 
-      argp_usage(state);
-    break;
-
+ 
   case ARGP_KEY_ARG:
     if (state->arg_num > 1)
       argp_usage(state);
@@ -91,16 +96,13 @@ void xs_free (void *p, void *hint) { free (p); }
 int main (int argc, char **argv) 
 {
   arguments_t options;
-  options.waddress = NULL;
-  options.raddress = NULL;
+  options.address = NULL;
+  options.mode = 0; /* read */
   options.key = NULL;
  
   argp_parse (&argp,argc,argv,0,0,&options);
 
-  if (!options.waddress && !options.raddress)
-    exit(0);
-
-  if (!options.key)
+  if (!options.address || !options.key)
     exit(0);
 
   int r = 0;
@@ -110,12 +112,12 @@ int main (int argc, char **argv)
   assert(ctx); /*FIXME*/
 
   /* read : */
-  if (options.raddress && options.key) {
+  if (options.mode == 0) {
     
     sock = xs_socket (ctx,XS_REQ);
     assert(sock); /*FIXME*/
 
-    r = xs_connect (sock,options.raddress);
+    r = xs_connect (sock,options.address);
     xs_assert (r != -1);
     
     interface = r;
@@ -151,12 +153,12 @@ int main (int argc, char **argv)
   } 
 
   /* write : */
-  if (options.waddress && options.key) {
+  if (options.mode == 1) {
 
     sock = xs_socket (ctx,XS_PUSH);
     assert(sock); /*FIXME*/
 
-    r = xs_connect (sock,options.waddress);
+    r = xs_connect (sock,options.address);
     xs_assert (r != -1);
 
     interface = r;
@@ -179,16 +181,55 @@ int main (int argc, char **argv)
     xs_msg_t msg_part;
     xs_msg_init_data (&msg_part,buffer,strlen(buffer),xs_free,NULL);  
 
-    r = xs_sendmsg (sock,&msg_key,XS_SNDMORE|XS_DONTWAIT);
+    r = xs_sendmsg (sock,&msg_key,XS_SNDMORE);
     xs_assert (r != -1);
 
-    r = xs_sendmsg (sock,&msg_part,XS_DONTWAIT);
+    r = xs_sendmsg (sock,&msg_part,0);
     xs_assert (r != -1);   
+
+    xs_msg_close (&msg_key);
+    xs_msg_close (&msg_part);
 
     xs_shutdown (sock,interface);
     
     goto error;
   }
+
+  /* delete : */
+  if (options.mode == 2) {
+
+    sock = xs_socket (ctx,XS_PUSH);
+    assert(sock); /*FIXME*/
+
+    r = xs_connect (sock,options.address);
+    xs_assert (r != -1);
+
+    interface = r;
+
+    xs_msg_t msg_key;
+    void *key = malloc(sizeof(char) * strlen(options.key));
+    memcpy (key,options.key,strlen(options.key));
+    xs_msg_init_data (&msg_key,key,strlen(options.key),xs_free,NULL);
+
+    xs_msg_t msg_part;
+    xs_msg_init (&msg_part);
+
+    r = xs_sendmsg (sock,&msg_key,XS_SNDMORE);
+    xs_assert (r != -1);
+
+    r = xs_sendmsg (sock,&msg_part,0);
+    xs_assert (r != -1);
+
+    xs_msg_close (&msg_key);
+    xs_msg_close (&msg_part);
+    
+    xs_shutdown (sock,interface);
+
+    printf("deleted %s\n",options.key);
+
+    goto error;
+  }
+
 
  error:
   xs_close (sock);
