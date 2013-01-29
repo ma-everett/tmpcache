@@ -80,5 +80,26 @@ we can then create a readonly cache.
 
     > tmpcache -c [filename].cdb -r [raddress]
  
- 
-<script src="https://gist.github.com/4658985.js"></script>
+Using the included Client
+-------------------------
+
+We can use the included client to write and read from a *tmpcache*. With an
+existing *tmpcache* service running, we can write the cache in the following
+ways:
+
+    > client -w foo -a ipc:///tmp/run/tmpcache.write
+    > hello there! <enter>
+
+Or directly from a file
+
+    > cat foo.txt | client -w foo -a ipc:///tmp/run/tmpcache.write
+
+Reading from an existing cache:
+
+    > client -r foo -a ipc:///tmp/run/tmpcache.read
+    > hello there!
+
+Or directly into a file
+
+    > client -r foo -a ipc:///tmp/run/tmpcache.read > foo.txt 
+
