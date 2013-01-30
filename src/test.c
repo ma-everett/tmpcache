@@ -1,43 +1,20 @@
 
-#include "bstrlib/bstrlib.h"
-#include <unistd.h>
+#include "utility.h"
+
 #include <stdlib.h>
-
 #include <stdio.h>
-#include <string.h>
-#include <cdb.h>
-#include <fcntl.h>
-
-typedef struct cdb_make cdbm_t;
 
 int main(void) {
 
-  cdbm_t cdb;
-  
-  int fd = open("test.cdb", O_RDWR|O_CREAT);
-  if (fd == -1) {
-    
-    printf("error opening test.cdb\n");
-    return -1;
-  }
-  
-  if (cdb_make_start(&cdb,fd) != 0) {
+  bstring addr0 = bfromcstr("tcp://127.0.0.1:5555");
+  bstring addr1 = bfromcstr("ipc:///tmp/run/read.ipc");
 
-    printf("error cdb make\n");
-    close(fd);
-    return -1;
-  }
-
-  char *foo = malloc(3);
-  memcpy (foo,"bar",3);
-  int r = cdb_make_add(&cdb,"foo",3,foo,3);
-  printf ("foo = %d\n",r);
+  printf("%s (%s)\n",btocstr(addr0),(tc_validaddress(addr0)) ? "pass" : "fail");
+  printf("%s (%s)\n",btocstr(addr1),(tc_validaddress(addr1)) ? "pass" : "fail");
 
 
-  r = cdb_make_finish (&cdb);
-  printf ("cdb make finish %d\n",r);
-  r = close (fd);
-  printf ("close %d\n",r);
+  bdestroy (addr0);
+  bdestroy (addr1);
 
   return 0;
 }

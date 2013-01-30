@@ -2,8 +2,7 @@
 /* tmpcache/client.c 
  */
 #include "../config.h"
-#include "bstrlib/bstrlib.h"
-#define btocstr(bs) (char *)(bs)->data
+#include "utility.h"
 
 #include <stdlib.h>
 #include <stdio.h> 
@@ -40,73 +39,6 @@ typedef struct arguments {
 
 } arguments_t;
 
-long long strtobytes (const char *str) 
-{
-  char buffer[256];
-  memset(&buffer[0],'\0',256);
-
-  int n;
-  long long d = 1024;
-  int r = sscanf(str,"%d%s",&n,&buffer[0]);
-  if (r != 2)
-    return 0;
-
-  char *bp = &buffer[0];
-  while (*bp != '\0') {
-    
-    if (*bp == 'B' || *bp == 'b') {
-      d = n * (long long)1024;
-      break;
-    }
-    if (*bp == 'M' || *bp == 'm') {
-      d = n * (long long)1024 * 1024;
-      break;
-    }
-    if (*bp == 'G' || *bp == 'g') {
-      d = n * (long long)(1024 * 1024) * 1024;
-      break;
-    }
-  }
-      
-  return d;
-}
-
-int validaddress (bstring address) 
-{
-  /* ipc or tcp only connections, so ipc://validpath or tcp://0.0.0.0:5555 */
-  if (blength(address) <= 6)
-    return 0;
-
-  bstring protocol = bmidstr(address,0,6);
-   
-  if (biseq (protocol, bfromcstr("ipc://")) == 1) {
-   
-    bdestroy(protocol);
-
-    bstring path = bmidstr(address,6,blength(address) - 6);
-  
-    struct stat fstat;
-    if (stat(btocstr(path),&fstat) != 0) {
-      bdestroy (path);
-      return 0;
-    }
-
-    bdestroy (path);
-    return 1;
-  }
-
-  if (biseq (protocol,bfromcstr("tcp://")) == 1) {
-
-    bdestroy (protocol);
-
-    /* FIXME: improve */
-    
-    return 1;
-  }   
-  
-  bdestroy (protocol);
-  return 0;
-}
 
 static error_t parseoptions (int key, char *arg, struct argp_state *state)
 {
@@ -114,7 +46,7 @@ static error_t parseoptions (int key, char *arg, struct argp_state *state)
 
   switch(key) {
   case 's' :
-    arguments->size = arg ? strtobytes(arg) : arguments->size;
+    arguments->size = arg ? tc_strtobytecount(bfromcstr(arg)) : arguments->size;
     break;
   case 'r' :
     arguments->key = bfromcstr(arg);
@@ -132,7 +64,7 @@ static error_t parseoptions (int key, char *arg, struct argp_state *state)
     if (arg) {
 
       arguments->address = bfromcstr(arg);
-      if (!validaddress(arguments->address))
+      if (!tc_validaddress(arguments->address))
 	argp_error(state,"improper service address");
 
     } else {
@@ -167,6 +99,10 @@ static struct argp argp = {argp_options,parseoptions,args_doc,argp_doc};
     fprintf(stderr,"%s\n",xs_strerror(xs_errno()));	\
     goto error;}
 
+#define xs_assertmsg(s,str) if (!(s)) {			     \
+  fprintf(stderr,"%s - %s\n",(str),xs_strerror(xs_errno())); \
+  goto error;}
+
 void xs_free (void *p, void *hint) { free (p); }
 
 int main (int argc, char **argv) 
@@ -185,6 +121,12 @@ int main (int argc, char **argv)
   if (!blength(options.address) || !blength(options.key))
     exit(1);
 
+  if (!tc_checkaddress(options.address)) {
+    
+    fprintf(stderr,"invalid network address\n");
+    exit(2);
+  }
+
   int r = 0;
   int interface = 0;
   void *sock = NULL;
@@ -201,7 +143,7 @@ int main (int argc, char **argv)
    * timeout period and then put to stdout. 
    */
   if (options.mode == 0) {
-    
+        
     sock = xs_socket (ctx,XS_REQ);
     if (!sock) {
 
@@ -210,7 +152,7 @@ int main (int argc, char **argv)
     }
 
     r = xs_connect (sock,btocstr(options.address));
-    xs_assert (r != -1);
+    xs_assertmsg ((r != -1),"xs connection error");
     
     interface = r;
 
@@ -223,14 +165,14 @@ int main (int argc, char **argv)
     }
     memcpy (key,btocstr(options.key),blength(options.key));
     r = xs_msg_init_data (&msg_key,key,blength(options.key),xs_free,NULL);
-    xs_assert (r != -1);
+    xs_assertmsg ((r != -1),"xs key init error");
 
     xs_msg_t msg_part;
     r = xs_msg_init (&msg_part);
-    xs_assert (r != -1);
+    xs_assertmsg ((r != -1),"xs part init error");
 
     r = xs_sendmsg (sock,&msg_key,0);
-    xs_assert (r != -1);
+    xs_assertmsg ((r != -1),"xs sendmsg error");
 
     xs_pollitem_t pitems[1];
     pitems[0].socket = sock;
@@ -241,10 +183,10 @@ int main (int argc, char **argv)
     if (count) {
 
       r = xs_recvmsg (sock,&msg_key,0);
-      xs_assert (r != -1);
+      xs_assertmsg ((r != -1),"xs recvmsg error");
       
       r = xs_recvmsg (sock,&msg_part,0);
-      xs_assert (r != -1);
+      xs_assertmsg ((r != -1),"xs recvmsg error");
       
       if (xs_msg_size(&msg_part)) {
 
@@ -252,13 +194,13 @@ int main (int argc, char **argv)
       }
     
       r = xs_msg_close (&msg_key);
-      xs_assert (r != -1);
+      xs_assertmsg ((r != -1),"xs msg close error");
       r = xs_msg_close (&msg_part);
-      xs_assert (r != -1);
+      xs_assertmsg ((r != -1),"xs msg close error");
     }
 
     r = xs_shutdown (sock,interface);
-    xs_assert (r != -1);
+    xs_assertmsg ((r != -1),"xs sock shutdown error");
   } 
 
   /* Perform a write|delete operation, the service does not
@@ -275,7 +217,7 @@ int main (int argc, char **argv)
     }
 
     r = xs_connect (sock,btocstr(options.address));
-    xs_assert (r != -1);
+    xs_assertmsg ((r != -1),"xs connect error");
 
     interface = r;
 	
@@ -289,14 +231,14 @@ int main (int argc, char **argv)
 
     memcpy (key,btocstr(options.key),blength(options.key));
     r = xs_msg_init_data (&msg_key,key,blength(options.key),xs_free,NULL);
-    xs_assert (r != -1);
+    xs_assertmsg ((r != -1),"xs key init error");
 
     xs_msg_t msg_part;
 
     if (options.mode == 2) {
       
       r = xs_msg_init (&msg_part);
-      xs_assert (r != -1);
+      xs_assertmsg ((r != -1),"xs part init error");
 
     } else {
       
@@ -315,22 +257,22 @@ int main (int argc, char **argv)
       }
 
       r = xs_msg_init_data (&msg_part,buffer,strlen(buffer) - 1,xs_free,NULL);  
-      xs_assert (r != -1);
+      xs_assertmsg ((r != -1),"xs part init error");
     }
 
     r = xs_sendmsg (sock,&msg_key,XS_SNDMORE);
-    xs_assert (r != -1);
+    xs_assertmsg ((r != -1),"xs sendmsg error");
 
     r = xs_sendmsg (sock,&msg_part,0);
-    xs_assert (r != -1);   
+    xs_assertmsg ((r != -1),"xs sendmsg error");   
 
     r = xs_msg_close (&msg_key);
-    xs_assert (r != -1);
+    xs_assertmsg ((r != -1),"xs msg close error");
     r = xs_msg_close (&msg_part);
-    xs_assert (r != -1);
+    xs_assertmsg ((r != -1),"xs msg close error");
 
     r = xs_shutdown (sock,interface);
-    xs_assert(r != -1);
+    xs_assertmsg ((r != -1),"xs sock shutdown error");
   }
 
  error:
