@@ -32,7 +32,7 @@ int c_filterkey (bstring key) {
   const bstring tar = bfromcstr("/");
 
   if (binstr(key,0,tar) == BSTR_ERR)
-    return 1;
+    return 0;
 
-  return 0;
+  return 1;
 }

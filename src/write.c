@@ -18,10 +18,10 @@ unsigned int writecontentstofile(bstring key,bstring cachepath,char *data,unsign
 
     write(fp,data,(dsize < maxsize) ? dsize : maxsize);
     close(fp);
-    printf("%s %s -> %s\n",__FUNCTION__,btocstr(tmp), btocstr(key));
+    /*printf("%s %s -> %s\n",__FUNCTION__,btocstr(tmp), btocstr(key));*/
 
     r = rename((char *)tmp->data,(char *)key->data);
-    syslog(LOG_DEBUG,"%s renaming %s to %s (%s)",btocstr(tmp),btocstr(key),(r == 0) ? "pass" : "fail");
+    /*syslog(LOG_DEBUG,"%s renaming %s to %s (%s)",btocstr(tmp),btocstr(key),(r == 0) ? "pass" : "fail");*/
   }
 
   bdestroy (tmp);
@@ -37,7 +37,11 @@ unsigned int writecontentstocdb(bstring key,bstring cachepath,char *data,unsigne
 #endif
 
 #define xs_assert(s) if (!(s)) {\
-  syslog(LOG_ERR,"%s! %s",__FUNCTION__,xs_strerror(xs_errno()));\
+  syslog(LOG_ERR,"%s - %s",__FUNCTION__,xs_strerror(xs_errno()));\
+  goto error;}
+
+#define xs_assertmsg(s,str) if (!(s)) {\
+  syslog(LOG_ERR,"%s - %s : %s",__FUNCTION__,(str),xs_strerror(xs_errno()));\
   goto error;}
 
 void c_writefromcache (bstring address,bstring cachepath,int maxsize,c_signalf signal) 
@@ -75,6 +79,10 @@ void c_writefromcache (bstring address,bstring cachepath,int maxsize,c_signalf s
     goto exitearly;
   }
 
+  int64_t maxmsgsize = maxsize;
+  r = xs_setsockopt (sock,XS_MAXMSGSIZE,&maxmsgsize,sizeof(maxmsgsize));
+  xs_assertmsg (r == 0,"xs setsockopt maxmsgsize error");
+
   r = xs_bind (sock,btocstr(address));
   if (r == -1) {
 
@@ -85,10 +93,12 @@ void c_writefromcache (bstring address,bstring cachepath,int maxsize,c_signalf s
   }
   
   xs_msg_t msg_key;
-  xs_msg_init (&msg_key);
-  
+  r = xs_msg_init (&msg_key);
+  xs_assertmsg (r != -1,"xs key init error");
+
   xs_msg_t msg_part;
-  xs_msg_init (&msg_part);
+  r = xs_msg_init (&msg_part);
+  xs_assertmsg (r != -1,"xs part init error");
 
   xs_pollitem_t pitems[1];
   pitems[0].socket = sock;
@@ -104,21 +114,19 @@ void c_writefromcache (bstring address,bstring cachepath,int maxsize,c_signalf s
     if (count == 0)
       continue;
 
-    printf("message recv'd\n");
-
     r = xs_recvmsg (sock,&msg_key,0);
-    xs_assert (r != -1);
+    xs_assertmsg (r != -1,"xs recvmsg error");
     r = xs_recvmsg (sock,&msg_part,0);
-    xs_assert (r != -1);
+    xs_assertmsg (r != -1,"xs recvmsg error");
 
-    memset (&sbuf[0],'\0',sbufsize); /*FIXME, possible overflow*/
-    memcpy (&sbuf[0],xs_msg_data(&msg_key),xs_msg_size(&msg_key));
- 
-    
+    memset (&sbuf[0],'\0',sbufsize); 
+    int sizemax = 256 - (blength(cachepath) + 2);
+    memcpy (&sbuf[0],xs_msg_data(&msg_key),(xs_msg_size(&msg_key) < sizemax) ? xs_msg_size(&msg_key) : sizemax);
+     
     bstring key = bfromcstr(sbuf);
     int filtered = c_filterkey(key);
         
-    if (!filtered) {
+    if (filtered) {
       syslog (LOG_DEBUG,"%s! %s filtered",__FUNCTION__,btocstr(key));
       bdestroy (key);
       continue;
@@ -133,8 +141,7 @@ void c_writefromcache (bstring address,bstring cachepath,int maxsize,c_signalf s
     int size = xs_msg_size (&msg_part);
   
     if (size == 0 && !usecdb) {
-      printf("deleting %s\n",(char *)key->data);
-
+      
       r = remove(btocstr(key)); /*FIXME*/
       syslog (LOG_DEBUG,"%s> deleting %s",__FUNCTION__,btocstr(key));
       continue;
@@ -144,8 +151,10 @@ void c_writefromcache (bstring address,bstring cachepath,int maxsize,c_signalf s
     bdestroy (key);
   }
 
-  xs_msg_close (&msg_key);
-  xs_msg_close (&msg_part);
+  r = xs_msg_close (&msg_key);
+  xs_assertmsg (r != -1,"xs key close error");
+  r = xs_msg_close (&msg_part);
+  xs_assertmsg (r != -1,"xs part close error");
 
  error:
 

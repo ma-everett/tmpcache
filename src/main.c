@@ -1,7 +1,8 @@
 
 /* tmpcache/main.c */
 
-#include "cache.h"
+#include "utility.h"
+#include "cache.h" /*FIXME, this needs retiring for seperated utility code*/
 
 #include <signal.h>
 #include <pthread.h>
@@ -9,15 +10,14 @@
 #include <syslog.h>
 #include <assert.h>
 
-#define CACHE_VERSION "cache 0"
-
-const char *argp_program_version = CACHE_VERSION; /*FIXME*/
-const char *argp_program_bugaddress = "<..>";
+const char *argp_program_version = PACKAGE_STRING;
+const char *argp_program_bugaddress = PACKAGE_BUGREPORT;
 
 static char argp_doc[] = "tmpcache, a filesystem cache using message passing"; 
 static char args_doc[] = ""; /*FIXME*/
 
 static struct argp_option argp_options[] = {
+  {"timeout",  't', "", 0, "Responsive timeout"},
   {"snapshop", 's', "", 0, "Snapshot to stdout in cdb format"},
 #if defined HAVE_LIBCDB
   {"cache",    'c', "DIR|FILE",0,"tmpfs path or cdb file"},
@@ -35,58 +35,24 @@ typedef struct arguments {
 
   long long memory;
   long long size;
-  char *waddress;
-  char *raddress;
-  char *cache;
-  char *snapshot;
+  bstring waddress;
+  bstring raddress;
+  char *cache; /*FIXME, maybe should be a bstring */
+  char *snapshot; /*FIXME, should also be a bstring */
+  int timeout;
 
 } arguments_t;
 
 unsigned int u_term;
-
-
-static error_t parseoptions (int key, char *arg, struct argp_state *state);
-static struct argp argp = {argp_options,parseoptions,args_doc,argp_doc};
-
-long long str2bytes (const char *str) 
-{
-  char buffer[256];
-  memset(&buffer[0],'\0',256);
-
-  int n;
-  long long d = 1024;
-  int r = sscanf(str,"%d%s",&n,&buffer[0]);
-  assert(r == 2); /* FIXME */
-
-  char *bp = &buffer[0];
-  while (*bp != '\0') {
-    
-    unsigned char c = toupper ((unsigned char)*bp);
-
-    if (c == 'B') {
-      d = n * (long long)1024;
-      break;
-    }
-
-    if (c == 'M') {
-      d = n * (long long)1024 * 1024;
-      break;
-    }
-
-    if (c == 'G') {
-      d = n * (long long)(1024 * 1024) * 1024;
-      break;
-    }
-  }
-      
-  return d;
-}
 
 static error_t parseoptions (int key, char *arg, struct argp_state *state)
 {
   arguments_t *arguments = state->input;
 
   switch(key) {
+  case 't':
+    arguments->timeout = atoi(arg);
+    break;
   case 's':
     arguments->snapshot = arg;
     break;
@@ -97,25 +63,24 @@ static error_t parseoptions (int key, char *arg, struct argp_state *state)
       argp_usage(state);
     break;
   case 'm' :
-    arguments->memory = arg ? str2bytes(arg) : arguments->memory;
+    arguments->memory = arg ? tc_strtobytecount(bfromcstr(arg)) : arguments->memory;
     break;
   case 'd' :
-    arguments->size = arg ? str2bytes(arg) : arguments->size;
+    arguments->size = arg ? tc_strtobytecount(bfromcstr(arg)) : arguments->size;
     break;
   case 'w' :
-    if (arg)
-      arguments->waddress = arg; /*FIXME:check address is correct*/
-    else
+    arguments->waddress = bfromcstr(arg);
+    if (!tc_validaddress(arguments->waddress))
       argp_usage(state);
+
     break;
   case 'r' :
-    if (arg)
-      arguments->raddress = arg; /*FIXME:check address is correct*/
-    else 
+    arguments->raddress = bfromcstr(arg);
+    if (!tc_validaddress(arguments->raddress))
       argp_usage(state);
     break;
 
-  case ARGP_KEY_ARG:
+ case ARGP_KEY_ARG:
     if (state->arg_num > 1)
       argp_usage(state);
 
@@ -131,6 +96,7 @@ static error_t parseoptions (int key, char *arg, struct argp_state *state)
   return 0;
 }
 
+static struct argp argp = {argp_options,parseoptions,args_doc,argp_doc};
 
 void signalhandler (int signo)
 {
@@ -143,34 +109,14 @@ unsigned int checksignal (void)
   return (u_term);
 }
 
-void *readcache (void *op) {
-
-  arguments_t *options = (arguments_t *)op;
-
-  bstring address = bfromcstr(options->raddress);
-  bstring cachepath = bfromcstr(options->cache);
-
-  syslog (LOG_INFO,"reading cache from %s @ %s",(char *)cachepath->data,(char *)address->data);
-  
-  c_readfromcache (address,cachepath,options->size,checksignal);
-
-  syslog (LOG_INFO,"closing cache %s @ %s for reading",(char *)cachepath->data,(char *)address->data);
-  
-  bdestroy (address);
-  bdestroy (cachepath);
-
-  return NULL;
-}
-
 int main (int argc, char **argv) 
 {
   arguments_t options;
   options.memory = 64 * (1024 * 1024);
   options.size = 1 * (1024 * 1024);
-  options.waddress = NULL;
-  options.raddress = NULL;
   options.cache = NULL;
   options.snapshot = NULL;
+  options.timeout = 5;
 
   argp_parse (&argp,argc,argv,0,0,&options);
 
@@ -179,6 +125,17 @@ int main (int argc, char **argv)
   signal (SIGTERM,signalhandler);
 
   openlog (NULL,LOG_PID|LOG_NDELAY,LOG_USER);
+
+  /* TODO: rather then passing specific details to the service, instead 
+   * pass the options and some additional annotation per service.
+   * 
+   * options.cache and snapshot need to be converted to bstrings and 
+   * also be checked whilst option parsing. 
+   */
+
+
+  /* Handling the Snapshot option here
+   */
 
   if (options.snapshot) {
 
@@ -197,41 +154,62 @@ int main (int argc, char **argv)
     goto finish;
   }
 
-  if (options.raddress && !options.waddress) {
+  /* Just handling the Read service here
+   */
 
-    bstring address = bfromcstr(options.raddress);
+  if (blength(options.raddress) && ! blength(options.waddress)) {
+
     bstring cachepath = bfromcstr(options.cache);
 
-    syslog (LOG_INFO,"reading cache from %s @ %s",(char *)cachepath->data,(char *)address->data);
+    syslog (LOG_INFO,"reading cache from %s @ %s",btocstr(cachepath),btocstr(options.raddress));
     
-    c_readfromcache (address,cachepath,options.size,checksignal);
+    c_readfromcache (options.raddress,cachepath,options.size,checksignal);
 
-    syslog (LOG_INFO,"closing cache %s @ %s for reading",(char *)cachepath->data,(char *)address->data);
-    
-    bdestroy (address);
+    syslog (LOG_INFO,"closing cache %s @ %s for reading",btocstr(cachepath),btocstr(options.raddress));    
     bdestroy (cachepath);
 
     goto finish;
   }
   
-  if (options.waddress && !options.raddress) {
+  /* Just handling the Write service here
+   */
 
-    bstring address = bfromcstr(options.waddress);
+  if (blength(options.waddress) && ! blength(options.raddress)) {
+
     bstring cachepath = bfromcstr(options.cache);
 
-    syslog (LOG_INFO,"writing cache from %s @ %s",(char *)cachepath->data,(char *)address->data);
+    syslog (LOG_INFO,"writing cache from %s @ %s",btocstr(cachepath),btocstr(options.waddress));
 
-    c_writefromcache (address,cachepath,options.size,checksignal);
+    c_writefromcache (options.waddress,cachepath,options.size,checksignal);
 
-    syslog (LOG_INFO,"closing cache %s @ %s for writing",(char *)cachepath->data,(char *)address->data);
-
-    bdestroy (address);
+    syslog (LOG_INFO,"closing cache %s @ %s for writing",btocstr(cachepath),btocstr(options.waddress));
     bdestroy (cachepath);
 
     goto finish;
   }
 
-  if (options.waddress && options.raddress) {
+  /* For both Read|Write service we need to 
+   * run an additional thread for read. 
+   */
+
+  if (blength(options.waddress) && blength(options.raddress)) {
+
+    void *readcache (void *op) {
+
+      arguments_t *options = (arguments_t *)op;
+
+      bstring cachepath = bfromcstr(options->cache);
+
+      syslog (LOG_INFO,"reading cache from %s @ %s",btocstr(cachepath),btocstr(options->raddress));
+
+      c_readfromcache (options->raddress,cachepath,options->size,checksignal);
+
+      syslog (LOG_INFO,"closing cache %s @ %s for reading",btocstr(cachepath),btocstr(options->raddress));
+  
+      bdestroy (cachepath);
+
+      return NULL;
+    }
 
     pthread_t read_t;
     if (pthread_create(&read_t,NULL,readcache,(void *)&options) != 0) {
@@ -239,16 +217,14 @@ int main (int argc, char **argv)
       abort();
     }
 
-    bstring address = bfromcstr(options.waddress);
     bstring cachepath = bfromcstr(options.cache);
 
-    syslog (LOG_INFO,"writing cache from %s @ %s",(char *)cachepath->data,(char *)address->data);
+    syslog (LOG_INFO,"writing cache from %s @ %s",btocstr(cachepath),btocstr(options.waddress));
 
-    c_writefromcache (address,cachepath,options.size,checksignal);
+    c_writefromcache (options.waddress,cachepath,options.size,checksignal);
 
-    syslog (LOG_INFO,"closing cache %s @ %s for writing",(char *)cachepath->data,(char *)address->data);
+    syslog (LOG_INFO,"closing cache %s @ %s for writing",btocstr(cachepath),btocstr(options.waddress));
 
-    bdestroy (address);
     bdestroy (cachepath);
 
     pthread_join (read_t,NULL);
@@ -258,6 +234,10 @@ int main (int argc, char **argv)
  finish:
 
   closelog ();
+
+  bdestroy (options.waddress);
+  bdestroy (options.raddress);
+
 
   exit(0);
 }
