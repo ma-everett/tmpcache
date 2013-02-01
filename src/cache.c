@@ -1,5 +1,5 @@
 
-/* tmpcache/cache.c 
+/* tmpcache/cache.c [OLD CODE]
  * - options:
  *            read | write | delete
  *            snapshot to cdb then read only
@@ -8,7 +8,7 @@
 #include "../config.h"
 
 #include "bstrlib/bstrlib.h"
-#include "bstrlib/bsafe.h"
+#include "bstrlib/bstrsafe.h"
 
 #include <dirent.h>
 #include <sys/types.h>

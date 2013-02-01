@@ -7,7 +7,6 @@
  */
 
 #include "bstrlib/bstrlib.h"
-#include "bstrlib/bsafe.h"
 
 #include <stdlib.h>
 #include <stdio.h>

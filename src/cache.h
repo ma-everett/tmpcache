@@ -6,10 +6,10 @@
 
 #include "../config.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 
-#include "bstrlib/bstrlib.h"
-#define btocstr(bs) (char *)(bs)->data
+#include "utility.h"
 
 #if defined HAVE_LIBCDB
 #include <cdb.h>
@@ -20,24 +20,50 @@ typedef struct cdb_make cdbm_t;
 #endif
 
 /* memory.c : */
-void *c_malloc (unsigned int size,void *hint);
+void *c_malloc (size_t size,void *hint);
 void  c_free   (void *p,void *hint);
 
-typedef unsigned int (*c_readf) (void *,bstring,char *,unsigned int);
-typedef unsigned int (*c_writef) (bstring,bstring,char *,unsigned int,unsigned int);
-typedef unsigned int (*c_signalf) (void);
+
+typedef uint64_t (*c_readf) (void *,bstring,char *,uint64_t);
+typedef uint64_t (*c_writef) (bstring,bstring,char *,uint64_t, uint64_t);
+typedef uint32_t (*c_signalf) (void);
 
 #if defined HAVE_LIBCDB
-int c_iscdbfile (bstring cachepath);
+uint32_t c_iscdbfile (bstring cachepath);
 #endif
 
-int c_filterkey (bstring key);
-
-void c_readfromcache (bstring address,bstring cachepath,int maxsize,c_signalf signal);
-void c_writefromcache (bstring address,bstring cachepath,int maxsize,c_signalf signal);
-void c_snapshotcache (bstring address,bstring cachepath);
+uint32_t c_filterkey (bstring key);
 
 
 
+typedef struct {
+
+  bstring address;
+  bstring cachepath;
+  uint64_t size;
+
+  c_signalf signalf;
+} tc_readconfig_t;
+
+typedef struct {
+
+  bstring address;
+  bstring cachepath;
+  uint64_t size;
+  uint64_t maxsize;
+
+  c_signalf signalf;
+} tc_writeconfig_t;
+
+typedef struct {
+
+  bstring address;
+  bstring cachepath;
+
+} tc_snapshotconfig_t;
+
+void tc_readfromcache (tc_readconfig_t *);
+void tc_writefromcache (tc_writeconfig_t *);
+void tc_snapshotcache (tc_snapshotconfig_t *);
 
 #endif

@@ -10,6 +10,44 @@
 #include <syslog.h>
 #include <stdio.h>
 
+void writecontentstostdout (DIR *d, bstring a, bstring rootpath) 
+{
+  struct dirent *dir;
+  
+  size_t bufsize = 0;
+  char *filebuffer = NULL;
+
+  while ((dir = readdir(d)) != NULL) {
+
+    if (strcmp(dir->d_name, ".")== 0 || strcmp(dir->d_name,"..") == 0)
+      continue;
+    
+    bstring filename = bformat("%s/%s",btocstr(rootpath),dir->d_name);
+    
+    struct stat statbuf;
+    stat(btocstr(filename),&statbuf);
+    
+    if ( ! S_ISDIR(statbuf.st_mode)) {
+    
+      FILE *fp = fopen(btocstr(filename),"r");
+      if (fp) {
+	uint64_t cpos = ftell(fp);
+	fseek(fp,0,SEEK_END);
+	bufsize = ftell(fp);
+	fseek(fp,cpos,SEEK_SET);
+	
+	filebuffer = (char *)c_malloc(bufsize + 1,NULL); /*FIXME*/
+	filebuffer[bufsize] = '\0';
+	fread(&filebuffer[0],bufsize,1,fp);
+	fclose(fp);
+      }
+
+      fprintf(stdout,"+%ld,%ld:%s->%s\n",strlen(dir->d_name),bufsize,dir->d_name,filebuffer);    
+      c_free (filebuffer,NULL);
+    }          
+  }
+}
+
 #define xs_assert(s) if (!(s)) {\
   syslog(LOG_ERR,"%s! %s",__FUNCTION__,xs_strerror(xs_errno()));\
   goto error;}
@@ -25,7 +63,7 @@ void writecontentstoserver (DIR *d, bstring address, bstring rootpath)
   void * sock = xs_socket (ctx,XS_PUSH);
   xs_assert (sock);
 
-  int r = 0;
+  int32_t r = 0;
 
   size_t bufsize = 0;
   char *filebuffer = NULL;
@@ -94,7 +132,7 @@ void writecontentstocdbfile (DIR *d, bstring address, bstring rootpath)
   
   bstring tmpaddress = bformat("%s.tmp",btocstr(address));
 
-  int fd = open((char *)tmpaddress->data, O_RDWR|O_CREAT);
+  int32_t fd = open((char *)tmpaddress->data, O_RDWR|O_CREAT);
   if (fd == -1) {
     
     syslog (LOG_ERR,"%s, cdb (file %s) open error",__FUNCTION__,btocstr(tmpaddress));
@@ -110,8 +148,8 @@ void writecontentstocdbfile (DIR *d, bstring address, bstring rootpath)
   
   size_t bufsize = 0;
   char *filebuffer = NULL;
-  int r = 0;
-  int numofwrites = 0;
+  int32_t r = 0;
+  int32_t numofwrites = 0;
 
   while ((dir = readdir(d)) != NULL) {
 
@@ -127,7 +165,7 @@ void writecontentstocdbfile (DIR *d, bstring address, bstring rootpath)
     
       FILE *fp = fopen(btocstr(filename),"r");
       if (fp) {
-	long cpos = ftell(fp);
+	uint64_t cpos = ftell(fp);
 	fseek(fp,0,SEEK_END);
 	bufsize = ftell(fp);
 	fseek(fp,cpos,SEEK_SET);
@@ -160,33 +198,38 @@ void writecontentstocdbfile (DIR *d, bstring address, bstring rootpath)
   close (fd); /*FIXME*/
 
   rename (btocstr(tmpaddress),btocstr(address)); /*FIXME */
-  
+  /* TODO: chmod +r */
+
   syslog (LOG_DEBUG,"%s number of writes to cdb file %d",__FUNCTION__,numofwrites);
 }
 #endif
 
 
 
-void c_snapshotcache (bstring address,bstring cachepath) 
+void tc_snapshotcache (tc_snapshotconfig_t *config) 
 {
   DIR *d;
  
-  d = opendir(btocstr(cachepath));
+  d = opendir(btocstr(config->cachepath));
   if (!d) {
-    syslog(LOG_ERR,"%s! error opening directory %s\n",__FUNCTION__,btocstr(cachepath));
+    syslog(LOG_ERR,"%s! error opening directory %s\n",__FUNCTION__,btocstr(config->cachepath));
     return;
   }
+  void (*writef) (DIR *,bstring,bstring);
 
-  void (*writef) (DIR *,bstring,bstring) = writecontentstoserver;
-
+  if (blength(config->address)) {
+    writef = writecontentstoserver;
+  } else {
+    writef = writecontentstostdout;
+  }
 
 #if defined HAVE_LIBCDB
-
+  /*
   if (c_iscdbfile (address))
     writef = writecontentstocdbfile;
-
+  */
 #endif
 
 
-  (*writef) (d,address,cachepath);
+  (*writef) (d,config->address,config->cachepath);
 }

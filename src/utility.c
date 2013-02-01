@@ -3,6 +3,7 @@
 
 #include <unistd.h>
 #include <sys/stat.h>
+#include <stdio.h>
 
 /* checks for a valid network address, compatible with
  * crossroads.io message library and with tmpcache.
@@ -10,7 +11,7 @@
  * an invalid address. 
  */
 
-int tc_validaddress (bstring address) 
+uint32_t tc_validaddress (bstring address) 
 {
   if (blength(address) <= 6)
     return 0;
@@ -42,7 +43,7 @@ int tc_validaddress (bstring address)
 /* checks for a valid path, if an IPC address
  */
 
-int tc_checkaddress (bstring address)
+uint32_t tc_checkaddress (bstring address)
 {
   bstring protocol = bmidstr(address,0,6);
 
@@ -61,16 +62,16 @@ int tc_checkaddress (bstring address)
   return 1;
 }
 
-long long tc_strtobytecount (bstring str)
+uint64_t tc_strtobytecount (bstring str)
 {
-  if (blength(str) >= 50)
+  if (blength(str) >= 50 || blength(str) <= 0)
     return 0;
 
   char buffer[50];
   memset (&buffer[0],'\0',50);
 
   int n;
-  long long d = 1024;
+  uint64_t d = 1024;
   int r = sscanf (btocstr(str),"%d%s",&n,&buffer[0]);
   if (r != 2)
     return 0;
@@ -79,22 +80,22 @@ long long tc_strtobytecount (bstring str)
   while (*bp != '\0') {
     
     if (*bp == 'B' || *bp == 'b') {
-      d = (long long)1024;
+      d = (uint64_t)1024;
       break;
     }
 
     if (*bp == 'M' || *bp == 'm') {
-      d = (long long)(1024 * 1024);
+      d = (uint64_t)(1024 * 1024);
       break;
     }
 
     if (*bp == 'G' || *bp == 'g') {
-      d = (long long)(1024 * 1024) * 1024;
+      d = (uint64_t)(1024 * 1024) * 1024;
       break;
     }
   }
 
-  return (long long) n * d;
+  return (uint64_t) n * d;
 }
 
 

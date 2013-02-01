@@ -9,19 +9,19 @@
 #include <xs/xs.h>
 
 /* read data from a file */
-unsigned int readcontentsfromfile (void *hint,bstring key,char *data,unsigned int dsize)
+uint64_t readcontentsfromfile (void *hint,bstring key,char *data,uint64_t dsize)
 {
 
   struct stat statbuf;
-  int r = stat(btocstr(key),&statbuf);
+  int32_t r = stat(btocstr(key),&statbuf);
   if (r != 0)
     return 0;
 
-  unsigned int bufsize = 0;
+  uint64_t bufsize = 0;
   FILE *fp = fopen(btocstr(key),"r");
   if (fp) {
     
-    long cpos = ftell(fp);
+    uint64_t cpos = ftell(fp);
     fseek(fp,0,SEEK_END);
     bufsize = ftell(fp);
     fseek(fp,cpos,SEEK_SET);
@@ -29,7 +29,7 @@ unsigned int readcontentsfromfile (void *hint,bstring key,char *data,unsigned in
     if (bufsize) {
       
       fread (data,(bufsize < dsize) ? bufsize : dsize,1,fp);
-      int Kb = (bufsize <= 1024) ? bufsize : bufsize / 1024;
+      uint64_t Kb = (bufsize <= 1024) ? bufsize : bufsize / 1024;
     
     }
     fclose (fp);
@@ -41,10 +41,10 @@ unsigned int readcontentsfromfile (void *hint,bstring key,char *data,unsigned in
 
 #if defined HAVE_LIBCDB
 /* read data from a constant database file */
-unsigned int readcontentsfromcdb (void *hint,bstring key,char *data,unsigned int dsize)
+uint64_t readcontentsfromcdb (void *hint,bstring key,char *data,uint64_t dsize)
 {
   cdb_t *cdb = (cdb_t *)hint;
-  unsigned int vlen = 0, vpos = 0;
+  uint32_t vlen = 0, vpos = 0;
 
   if (cdb_find(cdb,btocstr(key),blength(key)) > 0) {
 
@@ -52,19 +52,12 @@ unsigned int readcontentsfromcdb (void *hint,bstring key,char *data,unsigned int
     vlen = cdb_datalen(cdb);
 
     cdb_read (cdb,data,(vlen < dsize) ? vlen : dsize,vpos);
-    int Kb = (vlen < 1024) ? vlen : vlen / 1024;
+    uint64_t Kb = (vlen < 1024) ? vlen : vlen / 1024;
 
-    /*
-    syslog(LOG_DEBUG,"%s> looking up %s, %d%s\n",__FUNCTION__,btocstr(key),
-	   Kb, (vlen <= 1024) ? "b" : "Kb");
-    */
-  } else {
-    /*
-    syslog(LOG_DEBUG,"%s> looking up %s, miss\n",__FUNCTION__,btocstr(key));
-    */
-    }
+    return (vlen < dsize) ? vlen : dsize;
+  } 
 
-  return (vlen < dsize) ? vlen : dsize;
+  return 0;
 }
 #endif
 
@@ -78,58 +71,65 @@ unsigned int readcontentsfromcdb (void *hint,bstring key,char *data,unsigned int
   syslog(LOG_ERR,"%s - %s : %s",__FUNCTION__,(str),xs_strerror(xs_errno()));\
   goto error;}
 
-void c_readfromcache (bstring address, bstring cachepath, int maxsize, c_signalf signal) 
+void tc_readfromcache (tc_readconfig_t * config)
 {
-  int sbufsize = 256 - (blength(cachepath) + 2);
+  uint32_t sbufsize = 256 - (blength(config->cachepath) + 2);
   char sbuf[ sbufsize ];
   
   c_readf readf = readcontentsfromfile;
   void *hint = NULL;
 
-  int r = -1;
+  int32_t r = -1;
 
 #if defined HAVE_LIBCDB
 
   cdb_t cdb;
-  int usecdb = c_iscdbfile(cachepath);
+  int32_t usecdb = c_iscdbfile(config->cachepath);
   if (usecdb) {
 
-    syslog(LOG_INFO,"%s -> trying to open cdb file %s",__FUNCTION__,btocstr(cachepath));
+    syslog(LOG_INFO,"%s -> trying to open cdb file %s",__FUNCTION__,btocstr(config->cachepath));
 
-    int fd = open(btocstr(cachepath),O_RDONLY);
+    int32_t fd = open(btocstr(config->cachepath),O_RDONLY); /*FIXME : unsigned ? */
     if (!fd) {
+      
+      syslog(LOG_ERR,"%s, cdb init error, failed to open file",__FUNCTION__);
+      goto exitearly;
+    }
+    
+    if (cdb_init(&cdb,fd) != 0) {
       
       syslog(LOG_ERR,"%s, cdb init error",__FUNCTION__);
       goto exitearly;
     }
-    
-    cdb_init(&cdb,fd);
+      
     readf = readcontentsfromcdb;
     hint = (void *)&cdb;
   }
 
 #endif
 
-  void *ctx = xs_init();
-  if (!ctx) {
+  void *ctx, *sock;
+
+  ctx = xs_init();
+  if (ctx == NULL) {
     
     syslog(LOG_ERR,"%s! %s",__FUNCTION__,xs_strerror(xs_errno()));
     goto exitearly;
   }
  
-  void *sock = xs_socket (ctx,XS_XREP);
-  if (!sock) {
+  sock = xs_socket (ctx,XS_XREP);
+  if (sock == NULL) {
 
     syslog(LOG_ERR,"%s! %s",__FUNCTION__,xs_strerror(xs_errno()));
     xs_term(ctx);
     goto exitearly;
   }
  
-  int rcvhwm = 500;
+  uint32_t rcvhwm = 500;
   r = xs_setsockopt (sock,XS_RCVHWM,&rcvhwm,sizeof(rcvhwm));
   xs_assertmsg (r == 0,"xs setsockopt rcvhwm error");
 
-  r = xs_bind (sock,btocstr(address));
+  r = xs_bind (sock,btocstr(config->address));
   if (r == -1) {
 
     syslog(LOG_ERR,"%s! %s",__FUNCTION__,xs_strerror(xs_errno()));
@@ -156,14 +156,14 @@ void c_readfromcache (bstring address, bstring cachepath, int maxsize, c_signalf
   pitems[0].socket = sock;
   pitems[0].events = XS_POLLIN;
 
-  int count  = 0;
+  uint32_t count  = 0;
   
   for (;;) {
     
     if (count == 0)
       count = xs_poll (pitems,1,(1000 * 3)); /*FIXME*/
 
-    if ((*signal)() == 1)
+    if ((*config->signalf)() == 1)
       break;
     
     if (count == 0) {
@@ -184,24 +184,24 @@ void c_readfromcache (bstring address, bstring cachepath, int maxsize, c_signalf
     memcpy (&sbuf[0],xs_msg_data(&msg_key),xs_msg_size(&msg_key));
 
     bstring key = bfromcstr(sbuf);
-    int filtered = c_filterkey(key);
+    int32_t filtered = c_filterkey(key);
     /* filter */
     if (filtered) 
       syslog(LOG_DEBUG,"%s! %s filtered\n",__FUNCTION__,btocstr(key));
 
 
 #if defined HAVE_LIBCDB
-    key = (usecdb) ? bfromcstr(sbuf) : bformat("%s/%s\0",btocstr(cachepath),sbuf);
+    key = (usecdb) ? bfromcstr(sbuf) : bformat("%s/%s\0",btocstr(config->cachepath),sbuf);
 #else 
-    key = bformat ("%s/%s\0",btocstr(cachepath),sbuf);
+    key = bformat ("%s/%s\0",btocstr(config->cachepath),sbuf);
 #endif
 
-    unsigned int rsize = 0;
+    uint64_t rsize = 0;
     void *data = NULL;
     
     if (!filtered) {
-      data = (void *)c_malloc (maxsize,NULL);
-      rsize = (*readf)(hint,key,data,maxsize);
+      data = (void *)c_malloc (config->size,NULL);
+      rsize = (*readf)(hint,key,data,config->size);
     }    
 
     if (rsize) {

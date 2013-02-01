@@ -15,11 +15,11 @@ void  c_free   (void *p,void *hint)
 }
 
 #if defined HAVE_LIBCDB
-int c_iscdbfile (bstring cachepath)
+uint32_t c_iscdbfile (bstring cachepath)
 {
   bstring ff = bmidstr (cachepath,blength(cachepath) - 4,4);
   bstring sf = bfromcstr (".cdb");
-  int r = biseq (ff,sf);
+  uint32_t r = biseq (ff,sf);
 
   bdestroy (ff);
   bdestroy (sf);
@@ -27,7 +27,7 @@ int c_iscdbfile (bstring cachepath)
 }
 #endif
     
-int c_filterkey (bstring key) {
+uint32_t c_filterkey (bstring key) {
 
   const bstring tar = bfromcstr("/");
 

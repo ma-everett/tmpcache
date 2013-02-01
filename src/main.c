@@ -4,6 +4,7 @@
 #include "utility.h"
 #include "cache.h" /*FIXME, this needs retiring for seperated utility code*/
 
+#include <stdint.h>
 #include <signal.h>
 #include <pthread.h>
 #include <argp.h>
@@ -33,17 +34,17 @@ static struct argp_option argp_options[] = {
 
 typedef struct arguments {
 
-  long long memory;
-  long long size;
+  uint64_t memory;
+  uint64_t size;
   bstring waddress;
   bstring raddress;
-  char *cache; /*FIXME, maybe should be a bstring */
-  char *snapshot; /*FIXME, should also be a bstring */
-  int timeout;
+  bstring cache; /*FIXME, maybe should be a bstring */
+  bstring snapshot; /*FIXME, should also be a bstring */
+  uint64_t timeout;
 
 } arguments_t;
 
-unsigned int u_term;
+uint32_t u_term;
 
 static error_t parseoptions (int key, char *arg, struct argp_state *state)
 {
@@ -51,16 +52,14 @@ static error_t parseoptions (int key, char *arg, struct argp_state *state)
 
   switch(key) {
   case 't':
-    arguments->timeout = atoi(arg);
+    arguments->timeout = (uint64_t)atoi(arg);
     break;
   case 's':
-    arguments->snapshot = arg;
+    arguments->snapshot = bfromcstr(arg);
+    
     break;
   case 'c':
-    if (arg)
-      arguments->cache = arg;
-    else 
-      argp_usage(state);
+    arguments->cache = bfromcstr(arg);
     break;
   case 'm' :
     arguments->memory = arg ? tc_strtobytecount(bfromcstr(arg)) : arguments->memory;
@@ -98,13 +97,13 @@ static error_t parseoptions (int key, char *arg, struct argp_state *state)
 
 static struct argp argp = {argp_options,parseoptions,args_doc,argp_doc};
 
-void signalhandler (int signo)
+void signalhandler (int32_t signo)
 {
   if (signo == SIGINT || signo == SIGTERM)
     u_term = 1;
 }
 
-unsigned int checksignal (void) 
+uint32_t checksignal (void) 
 {
   return (u_term);
 }
@@ -114,8 +113,6 @@ int main (int argc, char **argv)
   arguments_t options;
   options.memory = 64 * (1024 * 1024);
   options.size = 1 * (1024 * 1024);
-  options.cache = NULL;
-  options.snapshot = NULL;
   options.timeout = 5;
 
   argp_parse (&argp,argc,argv,0,0,&options);
@@ -137,19 +134,28 @@ int main (int argc, char **argv)
   /* Handling the Snapshot option here
    */
 
-  if (options.snapshot) {
+  if (blength(options.snapshot)) {
 
-    bstring address = bfromcstr(options.snapshot);
-    bstring cachepath = bfromcstr(options.cache);
-
-    syslog (LOG_INFO,"snapshoting cache from %s to %s",(char *)cachepath->data,(char *)address->data);
+    tc_snapshotconfig_t config;
+    if (blength(options.cache) == 0 && blength(options.waddress) == 0) {/*stdout*/
+      
+      config.cachepath = bstrcpy(options.snapshot);
+    } else {
     
-    c_snapshotcache (address,cachepath);
+      config.address = bstrcpy(options.waddress);
+      config.cachepath = bstrcpy(options.snapshot);
+    }
+ 
+    syslog (LOG_INFO,"snapshoting cache from %s",btocstr(config.cachepath));
+    
+    tc_snapshotcache (&config);
 
-    syslog (LOG_INFO,"done snapshoting cache from %s to %s",(char *)cachepath->data,(char *)address->data);
-
-    bdestroy (address);
-    bdestroy (cachepath);
+    syslog (LOG_INFO,"%s snapshot complete",btocstr(config.cachepath));
+  
+    if (blength(config.address))
+      bdestroy (config.address);
+    
+    bdestroy (config.cachepath);
     
     goto finish;
   }
@@ -159,15 +165,21 @@ int main (int argc, char **argv)
 
   if (blength(options.raddress) && ! blength(options.waddress)) {
 
-    bstring cachepath = bfromcstr(options.cache);
+    tc_readconfig_t config;
+    config.address = bstrcpy(options.raddress);
+    config.cachepath = bstrcpy(options.cache); /*FIXME*/
+    config.size = options.size;
+    config.signalf = checksignal;
 
-    syslog (LOG_INFO,"reading cache from %s @ %s",btocstr(cachepath),btocstr(options.raddress));
+    syslog (LOG_INFO,"reading cache from %s @ %s",btocstr(config.cachepath),btocstr(config.address));
     
-    c_readfromcache (options.raddress,cachepath,options.size,checksignal);
+    tc_readfromcache (&config);
 
-    syslog (LOG_INFO,"closing cache %s @ %s for reading",btocstr(cachepath),btocstr(options.raddress));    
-    bdestroy (cachepath);
-
+    syslog (LOG_INFO,"closing cache %s @ %s for reading",btocstr(config.cachepath),btocstr(config.address));    
+    
+    bdestroy (config.address);
+    bdestroy (config.cachepath);
+   
     goto finish;
   }
   
@@ -176,14 +188,21 @@ int main (int argc, char **argv)
 
   if (blength(options.waddress) && ! blength(options.raddress)) {
 
-    bstring cachepath = bfromcstr(options.cache);
+    tc_writeconfig_t config;
+    config.address = bstrcpy(options.waddress);
+    config.cachepath = bstrcpy(options.cache);
+    config.size = options.size;
+    config.maxsize = options.memory;
+    config.signalf = checksignal;
 
-    syslog (LOG_INFO,"writing cache from %s @ %s",btocstr(cachepath),btocstr(options.waddress));
+    syslog (LOG_INFO,"writing cache from %s @ %s",btocstr(config.cachepath),btocstr(config.address));
 
-    c_writefromcache (options.waddress,cachepath,options.size,checksignal);
+    tc_writefromcache (&config);
 
-    syslog (LOG_INFO,"closing cache %s @ %s for writing",btocstr(cachepath),btocstr(options.waddress));
-    bdestroy (cachepath);
+    syslog (LOG_INFO,"closing cache %s @ %s for writing",btocstr(config.cachepath),btocstr(config.address));
+
+    bdestroy (config.address);
+    bdestroy (config.cachepath);
 
     goto finish;
   }
@@ -195,19 +214,24 @@ int main (int argc, char **argv)
   if (blength(options.waddress) && blength(options.raddress)) {
 
     void *readcache (void *op) {
-
+      
       arguments_t *options = (arguments_t *)op;
 
-      bstring cachepath = bfromcstr(options->cache);
-
-      syslog (LOG_INFO,"reading cache from %s @ %s",btocstr(cachepath),btocstr(options->raddress));
-
-      c_readfromcache (options->raddress,cachepath,options->size,checksignal);
-
-      syslog (LOG_INFO,"closing cache %s @ %s for reading",btocstr(cachepath),btocstr(options->raddress));
-  
-      bdestroy (cachepath);
-
+      tc_readconfig_t config;
+      config.address = bstrcpy(options->raddress);
+      config.cachepath = bstrcpy(options->cache); /*FIXME*/
+      config.size = options->size;
+      config.signalf = checksignal;
+      
+      syslog (LOG_INFO,"reading cache from %s @ %s",btocstr(config.cachepath),btocstr(config.address));
+      
+      tc_readfromcache (&config);
+      
+      syslog (LOG_INFO,"closing cache %s @ %s for reading",btocstr(config.cachepath),btocstr(config.address));    
+      
+      bdestroy (config.address);
+      bdestroy (config.cachepath);
+   
       return NULL;
     }
 
@@ -216,16 +240,23 @@ int main (int argc, char **argv)
       syslog (LOG_ERR,"read thread creation error");
       abort();
     }
+ 
+    tc_writeconfig_t config;
+    config.address = bstrcpy(options.waddress);
+    config.cachepath = bstrcpy(options.cache);
+    config.size = options.size;
+    config.maxsize = options.memory;
+    config.signalf = checksignal;
 
-    bstring cachepath = bfromcstr(options.cache);
+    syslog (LOG_INFO,"writing cache from %s @ %s",btocstr(config.cachepath),btocstr(config.address));
 
-    syslog (LOG_INFO,"writing cache from %s @ %s",btocstr(cachepath),btocstr(options.waddress));
+    tc_writefromcache (&config);
 
-    c_writefromcache (options.waddress,cachepath,options.size,checksignal);
+    syslog (LOG_INFO,"closing cache %s @ %s for writing",btocstr(config.cachepath),btocstr(config.address));
 
-    syslog (LOG_INFO,"closing cache %s @ %s for writing",btocstr(cachepath),btocstr(options.waddress));
-
-    bdestroy (cachepath);
+    bdestroy (config.address);
+    bdestroy (config.cachepath);
+  
 
     pthread_join (read_t,NULL);
   }
@@ -234,10 +265,17 @@ int main (int argc, char **argv)
  finish:
 
   closelog ();
+ 
 
-  bdestroy (options.waddress);
-  bdestroy (options.raddress);
+  /* FIXME: must be a better way than this!?*/
+  /*
+    bdestroy (options.waddress);
 
+    bdestroy (options.raddress);
 
+    bdestroy (options.cache);
+
+    bdestroy (options.snapshot);
+  */
   exit(0);
 }
