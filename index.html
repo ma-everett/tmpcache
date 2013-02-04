@@ -33,7 +33,7 @@
 <h2>version 0 | A Work in Progress</h2>
 
 <p>In memory temporary cache written in C with 
-<a href="http://www.crossroads.io">Crossroads I/O library</a> providing the network
+<a href="http://www.zeromq.org">ZeroMQ</a> providing the network
 interface, for GNU/Linux.</p>
 
 <p>This is by no means a finished production ready solution for caching data,
@@ -41,7 +41,7 @@ there is much still to do. </p>
 
 <h2>Build and Install</h2>
 
-<p>You will need <a href="http://www.crossroads.io">Crossroads I/O library</a> installed. 
+<p>You will need <a href="http://www.zeromq.org">ZeroMQ</a> 3.x installed. 
 Optionally you may want <a href="http://www.corpit.ru/mjt/tinycdb.html">Tiny CDB library</a> installed for snapshotting. </p>
 
 <pre><code>&gt; ./configure
@@ -52,59 +52,53 @@ Optionally you may want <a href="http://www.corpit.ru/mjt/tinycdb.html">Tiny CDB
 
 <h2>Running</h2>
 
-<pre><code>&gt; tmpcache -m 64MB -s 1MB -w [waddress] -r [raddress] -c [dir]
+<pre><code>&gt; tmpcache_host dir raddress waddress 
 </code></pre>
 
 <p>Where <em>waddress</em> (for writing) and <em>raddress</em> (for reading) is 
-an Crossroads adddress in one of the following forms.</p>
+an zmq adddress in one of the following forms.</p>
 
 <ol>
-<li>IPC:///tmp/write.tmpcache</li>
-<li>TCP://127.0.0.1:8888 </li>
-</ol><p>Maximum memory is set with the <em>m</em> argument, the default is 64MB. </p>
-
-<p>The maximum size of the data to cache, as set with the <em>s</em> argument, the
-default is 1MB. </p>
-
-<p><em>dir</em> is the directory (absolute path) where the cache will reside. To 
+<li>ipc:///tmp/write.tmpcache</li>
+<li>tcp://127.0.0.1:8888 </li>
+</ol><p><em>dir</em> is the directory (absolute path) where the cache will reside. To 
 improve the performance, use a <em>tmpfs</em> for the cache directory. </p>
 
 <p>You can run numerous copies of <em>tmpcache</em> provided you use different network addresses. For instance, you can run many read-only instance, each with a different network address and a single write-only instance. </p>
 
 <h2>Running with Tmpfs</h2>
 
-<p>Create a <em>tmpfs</em> 
-    &gt; sudo mount -t tmpfs -o size=64m tmpfs /srv/tmpcache
-    &gt; sudo chown tmpcache:tmpcache /srv/tmpcache</p>
+<p>Create a <em>tmpfs</em> </p>
 
-<p>Run tmpcache instance for writing on an inter-process communication address.
-    &gt; tmpcache -m 64MB -s 1MB -w ipc:///tmp/run/tmpcache.write -c /srv/tmpcache &amp;</p>
+<pre><code>&gt; sudo mount -t tmpfs -o size=64m tmpfs /srv/tmpcache
+&gt; sudo chown tmpcache:tmpcache /srv/tmpcache
+</code></pre>
 
-<p>Now run a read instace on a TCP network address
-    &gt; tmpcache -r tcp://localhost:9898 -c /srv/tmpcache &amp;</p>
+<p>Run tmpcache instance for writing on an inter-process communication address.</p>
+
+<pre><code>&gt; tmpcache_write /srv/tmpcache ipc:///tmp/run/tmpcache.write &amp;
+</code></pre>
+
+<p>Now run a read instace on a TCP network address</p>
+
+<pre><code>&gt; tmpcache_read /srv/tmpcache tcp://localhost:9898
+</code></pre>
 
 <p><em>tmpcache</em> can be stopped by sending a TERM signal. </p>
 
-<h2>Creating a Snapshot</h2>
+<h2>Snapshotting to CDB or another cache</h2>
 
-<p>Because we use the filesystem, you can use the standard commands for copying
-files, however <em>tmpcache</em> provides to alternative methods of creating a
-snaphot/copy of the cache. The first is to directly write the contents of
-the cache to another cache.</p>
-
-<pre><code>&gt; tmpcache -s 1 -c [dir] -w [destination]
+<pre><code>&gt; tmpcache_dump /srv/tmpcache ipc:///tmp/run/tmpcache2.write
 </code></pre>
 
-<p>Where <em>destination</em> is another cache. The second method is to create a 
-<a href="http://www.corpit.ru/mjt/tinycdb.html#intro">cdb</a> database.</p>
+<p>Using <a href="http://b0llix.net/ezcdb/">ezcdb</a> to create a cdb file</p>
 
-<pre><code>&gt; tmpcache -s [filename].cdb -c [dir]
+<pre><code>&gt; tmpcache_dump /srv/tmpcache | ezcdb make cache.cdb
 </code></pre>
 
-<p>Where <em>filename</em> is an absolute path. This will create a database file which
-we can then create a readonly cache. </p>
+<p>We can then use the new cdb file as a read-only cache</p>
 
-<pre><code>&gt; tmpcache -c [filename].cdb -r [raddress]
+<pre><code>&gt; tmpcache_read cache.cdb tcp://localhost:9898
 </code></pre>
       </section>
       <footer>
