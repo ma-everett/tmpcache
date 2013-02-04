@@ -3,7 +3,7 @@
 
 #include "cache.h"
 
-#include <xs/xs.h>
+#include <zmq.h>
 #include <syslog.h>
 
 
@@ -33,12 +33,12 @@ uint64_t writecontentstocdb(bstring key,bstring cachepath,char *data,uint64_t ds
 }
 #endif
 
-#define xs_assert(s) if (!(s)) {\
-  syslog(LOG_ERR,"%s - %s",__FUNCTION__,xs_strerror(xs_errno()));\
+#define zmq_assert(s) if (!(s)) {\
+  syslog(LOG_ERR,"%s - %s",__FUNCTION__,zmq_strerror(zmq_errno()));\
   goto error;}
 
-#define xs_assertmsg(s,str) if (!(s)) {\
-  syslog(LOG_ERR,"%s - %s : %s",__FUNCTION__,(str),xs_strerror(xs_errno()));\
+#define zmq_assertmsg(s,str) if (!(s)) {\
+  syslog(LOG_ERR,"%s - %s : %s",__FUNCTION__,(str),zmq_strerror(zmq_errno()));\
   goto error;}
 
 void tc_writefromcache (tc_writeconfig_t *config)
@@ -61,51 +61,53 @@ void tc_writefromcache (tc_writeconfig_t *config)
   }
 #endif
 
-  void *ctx, *sock;
+  void *ctx,*sock;
   
-  ctx = xs_init();
+  ctx = zmq_ctx_new(); /*xs_init();*/
   if (ctx == NULL) {
 
-    syslog(LOG_ERR,"%s! %s",__FUNCTION__,xs_strerror(xs_errno()));
+    syslog(LOG_ERR,"%s! %s",__FUNCTION__,zmq_strerror(zmq_errno()));
     goto exitearly;
   }
-
-  sock = xs_socket (ctx,XS_PULL);
+  
+  sock = zmq_socket (ctx,ZMQ_PULL);
   if (sock == NULL) {
     
-    syslog(LOG_ERR,"%s! %s",__FUNCTION__,xs_strerror(xs_errno()));
-    xs_term(ctx);
+    syslog(LOG_ERR,"%s! XS_PULL %s",__FUNCTION__,zmq_strerror(zmq_errno()));
+    zmq_ctx_destroy(ctx); /*xs_term(ctx);*/
     goto exitearly;
   }
-
+  /*
   int64_t maxmsgsize = config->maxsize;
   r = xs_setsockopt (sock,XS_MAXMSGSIZE,&maxmsgsize,sizeof(maxmsgsize));
   xs_assertmsg (r == 0,"xs setsockopt maxmsgsize error");
-
-  r = xs_bind (sock,btocstr(config->address));
+ 
+  */
+  r = zmq_bind (sock,btocstr(config->address));
   if (r == -1) {
 
-    syslog (LOG_ERR,"%s! %s",__FUNCTION__,xs_strerror(xs_errno()));
-    xs_close (sock);
-    xs_term (ctx);
+    syslog (LOG_ERR,"%s! %s",__FUNCTION__,zmq_strerror(zmq_errno()));
+    
+    zmq_close (sock);
+    zmq_ctx_destroy (ctx);
     goto exitearly;
   }
-  
-  xs_msg_t msg_key;
-  r = xs_msg_init (&msg_key);
-  xs_assertmsg (r != -1,"xs key init error");
+ 
+  zmq_msg_t msg_key;
+  r = zmq_msg_init (&msg_key);
+  zmq_assertmsg (r != -1,"key init error");
 
-  xs_msg_t msg_part;
-  r = xs_msg_init (&msg_part);
-  xs_assertmsg (r != -1,"xs part init error");
+  zmq_msg_t msg_part;
+  r = zmq_msg_init (&msg_part);
+  zmq_assertmsg (r != -1,"part init error");
 
-  xs_pollitem_t pitems[1];
+  zmq_pollitem_t pitems[1];
   pitems[0].socket = sock;
-  pitems[0].events = XS_POLLIN;
+  pitems[0].events = ZMQ_POLLIN;
 
   for (;;) {
 
-    uint32_t count = xs_poll (pitems,1,(1000 * 3)); /*FIXME*/
+    uint32_t count = zmq_poll (pitems,1,(1000 * 3)); /*FIXME*/
 
     if ((*config->signalf)() == 1)
       break;
@@ -113,14 +115,14 @@ void tc_writefromcache (tc_writeconfig_t *config)
     if (count == 0)
       continue;
 
-    r = xs_recvmsg (sock,&msg_key,0);
-    xs_assertmsg (r != -1,"xs recvmsg error");
-    r = xs_recvmsg (sock,&msg_part,0);
-    xs_assertmsg (r != -1,"xs recvmsg error");
+    r = zmq_recvmsg (sock,&msg_key,0);
+    zmq_assertmsg (r != -1,"recvmsg error");
+    r = zmq_recvmsg (sock,&msg_part,0);
+    zmq_assertmsg (r != -1,"recvmsg error");
 
     memset (&sbuf[0],'\0',sbufsize); 
     uint64_t sizemax = 256 - (blength(config->cachepath) + 2);
-    memcpy (&sbuf[0],xs_msg_data(&msg_key),(xs_msg_size(&msg_key) < sizemax) ? xs_msg_size(&msg_key) : sizemax);
+    memcpy (&sbuf[0],zmq_msg_data(&msg_key),(zmq_msg_size(&msg_key) < sizemax) ? zmq_msg_size(&msg_key) : sizemax);
      
     bstring key = bfromcstr(sbuf);
     uint32_t filtered = c_filterkey(key);
@@ -137,7 +139,7 @@ void tc_writefromcache (tc_writeconfig_t *config)
     key = bformat("%s/%s\0",btocstr(config->cachepath),sbuf);
 #endif
 
-    uint64_t size = xs_msg_size (&msg_part);
+    uint64_t size = zmq_msg_size (&msg_part);
   
     if (size == 0 && !usecdb) {
       
@@ -146,30 +148,32 @@ void tc_writefromcache (tc_writeconfig_t *config)
       continue;
     }
     
-    uint64_t dsize = (*writef)(key,config->cachepath,xs_msg_data(&msg_part),
-			       xs_msg_size(&msg_part),config->maxsize);
+    uint64_t dsize = (*writef)(key,config->cachepath,zmq_msg_data(&msg_part),
+			       zmq_msg_size(&msg_part),config->maxsize);
     bdestroy (key);
   }
 
-  r = xs_msg_close (&msg_key);
-  xs_assertmsg (r != -1,"xs key close error");
-  r = xs_msg_close (&msg_part);
-  xs_assertmsg (r != -1,"xs part close error");
+  r = zmq_msg_close (&msg_key);
+  zmq_assertmsg (r != -1,"key close error");
+  r = zmq_msg_close (&msg_part);
+  zmq_assertmsg (r != -1,"part close error");
+
+  zmq_unbind (sock,btocstr(config->address)); /*FIXME, return check*/
 
  error:
 
-  r = xs_close (sock);
+  r = zmq_close (sock);
   if (r == -1) {
 
-    syslog (LOG_ERR,"%s, xs error : %s", __FUNCTION__,xs_strerror(xs_errno()));
-    xs_term (ctx);
+    syslog (LOG_ERR,"%s, xs error : %s", __FUNCTION__,zmq_strerror(zmq_errno()));
+    zmq_ctx_destroy (ctx);
     return;
   }
 
-  r = xs_term(ctx);
+  r = zmq_term(ctx);
   if (r == -1) {
 
-    syslog (LOG_ERR,"%s, xs error : %s",__FUNCTION__,xs_strerror(xs_errno()));
+    syslog (LOG_ERR,"%s, xs error : %s",__FUNCTION__,zmq_strerror(zmq_errno()));
     return;
   }
 

@@ -34,8 +34,6 @@ uint32_t c_iscdbfile (bstring cachepath);
 
 uint32_t c_filterkey (bstring key);
 
-
-
 typedef struct {
 
   bstring address;

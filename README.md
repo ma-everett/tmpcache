@@ -4,7 +4,7 @@ version 0 | A Work in Progress
 ---------
 
 In memory temporary cache written in C with 
-[Crossroads I/O library](http://www.crossroads.io) providing the network
+[ZeroMQ](http://www.zeromq.org) providing the network
 interface, for GNU/Linux.
 
 This is by no means a finished production ready solution for caching data,
@@ -13,7 +13,7 @@ there is much still to do.
 Build and Install
 ------------------
 
-You will need [Crossroads I/O library](http://www.crossroads.io) installed. 
+You will need [ZeroMQ](http://www.zeromq.org) 3.x installed. 
 Optionally you may want [Tiny CDB library](http://www.corpit.ru/mjt/tinycdb.html) installed for snapshotting. 
 
     > ./configure
@@ -24,18 +24,13 @@ Currently no install target, as there is no production ready code to use.
 Running
 ----------------
 
-    > tmpcache -m 64MB -s 1MB -w [waddress] -r [raddress] -c [dir]
+    > tmpcache_host dir raddress waddress 
 
 Where _waddress_ (for writing) and _raddress_ (for reading) is 
-an Crossroads adddress in one of the following forms.
+an zmq adddress in one of the following forms.
 
-1. IPC:///tmp/write.tmpcache
-2. TCP://127.0.0.1:8888 
-
-Maximum memory is set with the _m_ argument, the default is 64MB. 
-
-The maximum size of the data to cache, as set with the _s_ argument, the
-default is 1MB. 
+1. ipc:///tmp/write.tmpcache
+2. tcp://127.0.0.1:8888 
 
 _dir_ is the directory (absolute path) where the cache will reside. To 
 improve the performance, use a *tmpfs* for the cache directory. 
@@ -52,54 +47,11 @@ Create a *tmpfs*
 
 Run tmpcache instance for writing on an inter-process communication address.
 
-    > tmpcache -m 64MB -s 1MB -w ipc:///tmp/run/tmpcache.write -c /srv/tmpcache &
+    > tmpcache_write /srv/tmpcache ipc:///tmp/run/tmpcache.write &
 
 Now run a read instace on a TCP network address
 
-    > tmpcache -r tcp://localhost:9898 -c /srv/tmpcache &
+    > tmpcache_read /srv/tmpcache tcp://localhost:9898
  
 *tmpcache* can be stopped by sending a TERM signal. 
-
-Creating a Snapshot
---------------------
-
-Because we use the filesystem, you can use the standard commands for copying
-files, however *tmpcache* provides to alternative methods of creating a
-snaphot/copy of the cache. The first is to directly write the contents of
-the cache to another cache.
-
-    > tmpcache -s 1 -c [dir] -w [destination]
-
-Where _destination_ is another cache. The second method is to create a 
-[cdb](http://www.corpit.ru/mjt/tinycdb.html#intro) database.
-
-    > tmpcache -s [filename].cdb -c [dir]
-
-Where _filename_ is an absolute path. This will create a database file which
-we can then create a readonly cache. 
-
-    > tmpcache -c [filename].cdb -r [raddress]
- 
-Using the included Client
--------------------------
-
-We can use the included client to write and read from a *tmpcache*. With an
-existing *tmpcache* service running, we can write the cache in the following
-ways:
-
-    > tmpclient -w foo -a ipc:///tmp/run/tmpcache.write
-    > hello there! <enter>
-
-Or directly from a file
-
-    > cat foo.txt | tmpclient -w foo -a ipc:///tmp/run/tmpcache.write
-
-Reading from an existing cache:
-
-    > tmpclient -r foo -a ipc:///tmp/run/tmpcache.read
-    > hello there!
-
-Or directly into a file
-
-    > tmpclient -r foo -a ipc:///tmp/run/tmpcache.read > foo.txt 
 

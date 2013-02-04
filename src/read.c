@@ -6,7 +6,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
-#include <xs/xs.h>
+
+#include <zmq.h>
 
 /* read data from a file */
 uint64_t readcontentsfromfile (void *hint,bstring key,char *data,uint64_t dsize)
@@ -63,12 +64,12 @@ uint64_t readcontentsfromcdb (void *hint,bstring key,char *data,uint64_t dsize)
 
 
 
-#define xs_assert(s) if (!(s)) {\
-    syslog(LOG_ERR,"%s! %s",__FUNCTION__,xs_strerror(xs_errno()));	\
+#define zmq_assert(s) if (!(s)) {\
+    syslog(LOG_ERR,"%s! %s",__FUNCTION__,zmq_strerror(zmq_errno()));	\
     goto error;}
 
-#define xs_assertmsg(s,str) if (!(s)) {\
-  syslog(LOG_ERR,"%s - %s : %s",__FUNCTION__,(str),xs_strerror(xs_errno()));\
+#define zmq_assertmsg(s,str) if (!(s)) {\
+  syslog(LOG_ERR,"%s - %s : %s",__FUNCTION__,(str),zmq_strerror(zmq_errno()));\
   goto error;}
 
 void tc_readfromcache (tc_readconfig_t * config)
@@ -110,58 +111,61 @@ void tc_readfromcache (tc_readconfig_t * config)
 
   void *ctx, *sock;
 
-  ctx = xs_init();
+  ctx = zmq_ctx_new(); /*xs_init();*/
   if (ctx == NULL) {
     
-    syslog(LOG_ERR,"%s! %s",__FUNCTION__,xs_strerror(xs_errno()));
+    syslog(LOG_ERR,"%s! %s",__FUNCTION__,zmq_strerror(zmq_errno()));
     goto exitearly;
   }
  
-  sock = xs_socket (ctx,XS_XREP);
+  sock = zmq_socket (ctx,ZMQ_XREP);
   if (sock == NULL) {
 
-    syslog(LOG_ERR,"%s! %s",__FUNCTION__,xs_strerror(xs_errno()));
-    xs_term(ctx);
+    syslog(LOG_ERR,"cannot open XREP socket - %s",zmq_strerror(zmq_errno()));
+    zmq_ctx_destroy(ctx); /*xs_term(ctx);*/
     goto exitearly;
   }
  
+  /*
   uint32_t rcvhwm = 500;
-  r = xs_setsockopt (sock,XS_RCVHWM,&rcvhwm,sizeof(rcvhwm));
-  xs_assertmsg (r == 0,"xs setsockopt rcvhwm error");
+  r = zmq_setsockopt (sock,ZMQ_RCVHWM,&rcvhwm,sizeof(rcvhwm));
+  zmq_assertmsg (r == 0,"xs setsockopt rcvhwm error");
+  */
 
-  r = xs_bind (sock,btocstr(config->address));
+  r = zmq_bind (sock,btocstr(config->address));
   if (r == -1) {
 
-    syslog(LOG_ERR,"%s! %s",__FUNCTION__,xs_strerror(xs_errno()));
-    xs_close (sock);
-    xs_term (ctx);
+    syslog(LOG_ERR,"cannot not open %s - %s",btocstr(config->address),zmq_strerror(zmq_errno()));
+    zmq_close (sock);
+    zmq_ctx_destroy(ctx); /*xs_term (ctx);*/
     goto exitearly;
   }
 
-  xs_msg_t msg_ident;
-  r = xs_msg_init (&msg_ident);
-  xs_assertmsg (r != -1,"xs ident init error");
 
-  xs_msg_t msg_blank;
-  r = xs_msg_init (&msg_blank);
-  xs_assertmsg (r != -1,"xs blank init error");
+  zmq_msg_t msg_ident;
+  r = zmq_msg_init (&msg_ident);
+  zmq_assertmsg (r != -1,"ident init error");
 
-  xs_msg_t msg_key;
-  r = xs_msg_init (&msg_key);
-  xs_assertmsg (r != -1,"xs key init error");
+  zmq_msg_t msg_blank;
+  r = zmq_msg_init (&msg_blank);
+  zmq_assertmsg (r != -1,"blank init error");
+
+  zmq_msg_t msg_key;
+  r = zmq_msg_init (&msg_key);
+  zmq_assertmsg (r != -1,"key init error");
   
-  xs_msg_t msg_part;
+  zmq_msg_t msg_part;
 
-  xs_pollitem_t pitems[1];
+  zmq_pollitem_t pitems[1];
   pitems[0].socket = sock;
-  pitems[0].events = XS_POLLIN;
+  pitems[0].events = ZMQ_POLLIN;
 
   uint32_t count  = 0;
   
   for (;;) {
     
     if (count == 0)
-      count = xs_poll (pitems,1,(1000 * 3)); /*FIXME*/
+      count = zmq_poll (pitems,1,(1000 * 3)); /*FIXME*/
 
     if ((*config->signalf)() == 1)
       break;
@@ -171,17 +175,17 @@ void tc_readfromcache (tc_readconfig_t * config)
       continue;
     }
 
-    r = xs_recvmsg (sock,&msg_ident,0);
-    xs_assertmsg (r != -1,"xs recvmsg ident error");
-    r = xs_recvmsg (sock,&msg_blank,0);
-    xs_assertmsg (r != -1,"xs recvmsg blank error");
-    r = xs_recvmsg (sock,&msg_key,0);
-    xs_assertmsg (r != -1,"xs recvmsg key error");
+    r = zmq_recvmsg (sock,&msg_ident,0);
+    zmq_assertmsg (r != -1,"recvmsg ident error");
+    r = zmq_recvmsg (sock,&msg_blank,0);
+    zmq_assertmsg (r != -1,"recvmsg blank error");
+    r = zmq_recvmsg (sock,&msg_key,0);
+    zmq_assertmsg (r != -1,"recvmsg key error");
 
     count--;
 
     memset (&sbuf[0],'\0',256); /*FIXME, possible out of bounds error*/
-    memcpy (&sbuf[0],xs_msg_data(&msg_key),xs_msg_size(&msg_key));
+    memcpy (&sbuf[0],zmq_msg_data(&msg_key),zmq_msg_size(&msg_key));
 
     bstring key = bfromcstr(sbuf);
     int32_t filtered = c_filterkey(key);
@@ -205,47 +209,49 @@ void tc_readfromcache (tc_readconfig_t * config)
     }    
 
     if (rsize) {
-      r = xs_msg_init_data (&msg_part,data,rsize,c_free,NULL);
-      xs_assertmsg (r != -1,"xs msg part init error");
+      r = zmq_msg_init_data (&msg_part,data,rsize,c_free,NULL);
+      zmq_assertmsg (r != -1,"msg part init error");
     } else {
-      r = xs_msg_init (&msg_part);
-      xs_assertmsg (r != -1,"xs msg part init error");
+      r = zmq_msg_init (&msg_part);
+      zmq_assertmsg (r != -1,"msg part init error");
     }   
 
     bdestroy (key);
 
-    r = xs_sendmsg (sock,&msg_ident,XS_SNDMORE);
-    xs_assertmsg (r != -1,"xs sendmsg ident error");
-    r = xs_sendmsg (sock,&msg_blank,XS_SNDMORE);
-    xs_assertmsg (r != -1,"xs sendmsg blank error");
-    r = xs_sendmsg (sock,&msg_key,XS_SNDMORE);
-    xs_assertmsg (r != -1,"xs sendmsg key error");
-    r = xs_sendmsg (sock,&msg_part,0);
-    xs_assertmsg (r != -1,"xs sendmsg part error");
+    r = zmq_sendmsg (sock,&msg_ident,ZMQ_SNDMORE);
+    zmq_assertmsg (r != -1,"sendmsg ident error");
+    r = zmq_sendmsg (sock,&msg_blank,ZMQ_SNDMORE);
+    zmq_assertmsg (r != -1,"sendmsg blank error");
+    r = zmq_sendmsg (sock,&msg_key,ZMQ_SNDMORE);
+    zmq_assertmsg (r != -1,"sendmsg key error");
+    r = zmq_sendmsg (sock,&msg_part,0);
+    zmq_assertmsg (r != -1,"sendmsg part error");
 
   } /*for loop*/
 
  error:
   
-  r = xs_msg_close (&msg_ident);
-  xs_assertmsg (r != -1,"xs close ident error");
-  r = xs_msg_close (&msg_blank);
-  xs_assertmsg (r != -1,"xs close blank error");
-  r = xs_msg_close (&msg_key);
-  xs_assertmsg (r != -1,"xs close key error");
+  r = zmq_msg_close (&msg_ident);
+  zmq_assertmsg (r != -1,"close ident error");
+  r = zmq_msg_close (&msg_blank);
+  zmq_assertmsg (r != -1,"close blank error");
+  r = zmq_msg_close (&msg_key);
+  zmq_assertmsg (r != -1,"close key error");
+
+  zmq_unbind (sock,btocstr(config->address)); /*FIXME, check return*/
   
-  r = xs_close (sock);
+  r = zmq_close (sock);
   if (r == -1) {
 
-    syslog(LOG_ERR,"%s! %s",__FUNCTION__,xs_strerror(xs_errno()));
-    xs_term (ctx);
+    syslog(LOG_ERR,"%s! %s",__FUNCTION__,zmq_strerror(zmq_errno()));
+    zmq_ctx_destroy(ctx); /*xs_term (ctx);*/
     goto exitearly;
   }
 
-  r = xs_term (ctx);
+  r = zmq_ctx_destroy(ctx); /*xs_term (ctx);*/
   if (r == -1) {
 
-    syslog(LOG_ERR,"%s! %s",__FUNCTION__,xs_strerror(xs_errno()));
+    syslog(LOG_ERR,"%s! %s",__FUNCTION__,zmq_strerror(zmq_errno()));
     goto exitearly;
   }
 
