@@ -33,16 +33,16 @@ uint64_t writecontentstocdb(bstring key,bstring cachepath,char *data,uint64_t ds
 }
 #endif
 
-#define zmq_assert(s) if (!(s)) {\
-  syslog(LOG_ERR,"%s - %s",__FUNCTION__,zmq_strerror(zmq_errno()));\
-  goto error;}
 
 #define zmq_assertmsg(s,str) if (!(s)) {\
-  syslog(LOG_ERR,"%s - %s : %s",__FUNCTION__,(str),zmq_strerror(zmq_errno()));\
+  (*config->errorf)(str);\
   goto error;}
 
-void tc_writefromcache (tc_writeconfig_t *config)
+tc_writeinfo_t * tc_writefromcache (tc_writeconfig_t *config)
 {
+  tc_writeinfo_t *info;
+  info = NULL;
+
   uint64_t sbufsize = 256 - (blength(config->cachepath) + 2);
   char sbuf[ sbufsize ];
 
@@ -65,18 +65,19 @@ void tc_writefromcache (tc_writeconfig_t *config)
   
   ctx = zmq_ctx_new(); /*xs_init();*/
   if (ctx == NULL) {
-
+    /*FIXME*/
     syslog(LOG_ERR,"%s! %s",__FUNCTION__,zmq_strerror(zmq_errno()));
     goto exitearly;
   }
   
   sock = zmq_socket (ctx,ZMQ_PULL);
   if (sock == NULL) {
-    
+    /*FIXME*/
     syslog(LOG_ERR,"%s! XS_PULL %s",__FUNCTION__,zmq_strerror(zmq_errno()));
     zmq_ctx_destroy(ctx); /*xs_term(ctx);*/
     goto exitearly;
   }
+
   /*
   int64_t maxmsgsize = config->maxsize;
   r = xs_setsockopt (sock,XS_MAXMSGSIZE,&maxmsgsize,sizeof(maxmsgsize));
@@ -92,6 +93,11 @@ void tc_writefromcache (tc_writeconfig_t *config)
     zmq_ctx_destroy (ctx);
     goto exitearly;
   }
+
+  info = (tc_writeinfo_t *)c_malloc(sizeof(tc_writeinfo_t),NULL);
+  info->numofwrites = 0;
+  info->lowestwrite = config->maxsize;
+  info->largestwrite = 0;
  
   zmq_msg_t msg_key;
   r = zmq_msg_init (&msg_key);
@@ -151,6 +157,13 @@ void tc_writefromcache (tc_writeconfig_t *config)
     uint64_t dsize = (*writef)(key,config->cachepath,zmq_msg_data(&msg_part),
 			       zmq_msg_size(&msg_part),config->maxsize);
     bdestroy (key);
+
+    if (dsize) {
+      
+      info->numofwrites ++;
+      info->largestwrite = (dsize > info->largestwrite) ? dsize : info->largestwrite;
+      info->lowestwrite =  (dsize < info->lowestwrite) ? dsize : info->lowestwrite;
+    }
   }
 
   r = zmq_msg_close (&msg_key);
@@ -164,20 +177,19 @@ void tc_writefromcache (tc_writeconfig_t *config)
 
   r = zmq_close (sock);
   if (r == -1) {
-
-    syslog (LOG_ERR,"%s, xs error : %s", __FUNCTION__,zmq_strerror(zmq_errno()));
+    
+    (*config->errorf)("error on close");  
     zmq_ctx_destroy (ctx);
-    return;
+    goto exitearly;
   }
 
-  r = zmq_term(ctx);
+  r = zmq_ctx_destroy(ctx);
   if (r == -1) {
-
-    syslog (LOG_ERR,"%s, xs error : %s",__FUNCTION__,zmq_strerror(zmq_errno()));
-    return;
+ 
+    (*config->errorf)("error on ctx destroy");
   }
 
  exitearly:
-  return;
+  return info;
 }
     

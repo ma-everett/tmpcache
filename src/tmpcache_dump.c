@@ -1,5 +1,5 @@
 
-/* tmpcache/tmpcache_write.c */
+/* tmpcache/tmpcache_dump.c */
 
 #include <argtable2.h>
 #include <syslog.h>
@@ -42,7 +42,7 @@ int main (int argc, char **argv) {
     verbose = arg_lit0("v","verbose","tell me everything"),
     fsyslog = arg_lit0(NULL,"syslog","use syslog"),
     cachepath = arg_file1(NULL,NULL,"cachepath","directory or .cdb database file"),
-    netaddress0 = arg_file1(NULL,NULL,"address","crossroads.io read network address "),
+    netaddress0 = arg_file0(NULL,NULL,"address","zmq address"),
     
     end = arg_end(20),
   };
@@ -79,45 +79,54 @@ int main (int argc, char **argv) {
   signal (SIGINT,signalhandler);
   signal (SIGTERM,signalhandler);
 
-  tc_writeconfig_t config;
-  config.cachepath = bfromcstr (cachepath->filename[0]);
-  /*TODO: check for .cdb*/
-  config.address = bfromcstr (netaddress0->filename[0]);
-  /*TODO: check for correct address*/
-  config.size = 1 * (1024 * 1024);
-  config.maxsize = 64 * (1024 * 1024);
-  config.signalf = checksignal;
-  config.errorf = (fsyslog->count) ? logerror : printerror;
+  tc_snapshotconfig_t config;
 
-  if (fsyslog->count)  {
-    openlog (NULL,LOG_PID|LOG_NDELAY,LOG_USER);
-    syslog (LOG_INFO,"writing cache from %s @ %s",btocstr(config.cachepath),btocstr(config.address));
-  }
+  /* check if there is an address or not */
+  if (netaddress0->count == 0) {
 
-  tc_writeinfo_t * info = tc_writefromcache (&config);
-
-  if (fsyslog->count) {
-    if (info) {
-      syslog (LOG_INFO,"closing cache %s @ %s for writing, %d writes, largest %db, lowest %db",
-	      btocstr(config.cachepath),btocstr(config.address),info->numofwrites,info->largestwrite,info->lowestwrite);    
-    } else {
-      
-      syslog (LOG_INFO,"closing cache %s @ %s for writing",
-	      btocstr(config.cachepath),btocstr(config.address));
+    config.cachepath = bfromcstr (cachepath->filename[0]);
+    config.signalf = checksignal;
+    config.errorf = (fsyslog->count) ? logerror : printerror;
+    
+    if (fsyslog->count) {
+      openlog (NULL,LOG_PID|LOG_NDELAY,LOG_USER);
+      syslog (LOG_INFO,"writing cache %s to stdout",btocstr(config.cachepath));
     }
-    closelog();
+
+    tc_snapshotcachetostdout (&config);
+
+    if (fsyslog->count) {
+      syslog (LOG_INFO,"done writing cache %s to stdout",btocstr(config.cachepath));
+      closelog();
+    }
+
+    bdestroy (config.cachepath);
+
   } else {
-    if (info) {
-      fprintf (stdout,"%d writes, largest %db, lowest %db\n",
-	       info->numofwrites,info->largestwrite,info->lowestwrite);
-    } 
-  }    
 
-  bdestroy (config.address);
-  bdestroy (config.cachepath);
+    config.cachepath = bfromcstr (cachepath->filename[0]);
+    /*TODO: check for .cdb*/
+    config.address = bfromcstr (netaddress0->filename[0]);
+    /*TODO: check for correct address*/
 
-  if (info) 
-    c_free (info,NULL);
+    config.signalf = checksignal;
+    config.errorf = (fsyslog->count) ? logerror : printerror;
+
+    if (fsyslog->count)  {
+      openlog (NULL,LOG_PID|LOG_NDELAY,LOG_USER);
+      syslog (LOG_INFO,"writing cache from %s @ %s",btocstr(config.cachepath),btocstr(config.address));
+    }
+
+    tc_snapshotcachetoaddress (&config);
+
+    if (fsyslog->count) {
+      syslog (LOG_INFO,"closing cache %s @ %s for reading",btocstr(config.cachepath),btocstr(config.address));    
+      closelog();
+    }
+  
+    bdestroy (config.address);
+    bdestroy (config.cachepath);
+  }
 
  finish:
 

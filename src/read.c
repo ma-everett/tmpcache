@@ -63,17 +63,15 @@ uint64_t readcontentsfromcdb (void *hint,bstring key,char *data,uint64_t dsize)
 #endif
 
 
-
-#define zmq_assert(s) if (!(s)) {\
-    syslog(LOG_ERR,"%s! %s",__FUNCTION__,zmq_strerror(zmq_errno()));	\
-    goto error;}
-
 #define zmq_assertmsg(s,str) if (!(s)) {\
-  syslog(LOG_ERR,"%s - %s : %s",__FUNCTION__,(str),zmq_strerror(zmq_errno()));\
+  (*config->errorf)(str);\
   goto error;}
 
-void tc_readfromcache (tc_readconfig_t * config)
+tc_readinfo_t * tc_readfromcache (tc_readconfig_t * config)
 {
+  tc_readinfo_t *info;
+  info = NULL;
+
   uint32_t sbufsize = 256 - (blength(config->cachepath) + 2);
   char sbuf[ sbufsize ];
   
@@ -125,6 +123,10 @@ void tc_readfromcache (tc_readconfig_t * config)
     zmq_ctx_destroy(ctx); /*xs_term(ctx);*/
     goto exitearly;
   }
+
+  info = (tc_readinfo_t *)c_malloc(sizeof(tc_readinfo_t),NULL);
+  info->numofreads = 0;
+  info->numofmisses = 0;
  
   /*
   uint32_t rcvhwm = 500;
@@ -140,7 +142,6 @@ void tc_readfromcache (tc_readconfig_t * config)
     zmq_ctx_destroy(ctx); /*xs_term (ctx);*/
     goto exitearly;
   }
-
 
   zmq_msg_t msg_ident;
   r = zmq_msg_init (&msg_ident);
@@ -193,7 +194,6 @@ void tc_readfromcache (tc_readconfig_t * config)
     if (filtered) 
       syslog(LOG_DEBUG,"%s! %s filtered\n",__FUNCTION__,btocstr(key));
 
-
 #if defined HAVE_LIBCDB
     key = (usecdb) ? bfromcstr(sbuf) : bformat("%s/%s\0",btocstr(config->cachepath),sbuf);
 #else 
@@ -214,6 +214,8 @@ void tc_readfromcache (tc_readconfig_t * config)
     } else {
       r = zmq_msg_init (&msg_part);
       zmq_assertmsg (r != -1,"msg part init error");
+    
+      info->numofmisses ++;
     }   
 
     bdestroy (key);
@@ -226,6 +228,8 @@ void tc_readfromcache (tc_readconfig_t * config)
     zmq_assertmsg (r != -1,"sendmsg key error");
     r = zmq_sendmsg (sock,&msg_part,0);
     zmq_assertmsg (r != -1,"sendmsg part error");
+
+    info->numofreads ++;
 
   } /*for loop*/
 
@@ -262,5 +266,5 @@ void tc_readfromcache (tc_readconfig_t * config)
 
  exitearly:
 
-  return;  
+  return info;  
 }

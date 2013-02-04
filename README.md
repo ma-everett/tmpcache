@@ -55,3 +55,15 @@ Now run a read instace on a TCP network address
  
 *tmpcache* can be stopped by sending a TERM signal. 
 
+Snapshotting to CDB or another cache
+------------------------------------
+
+    > tmpcache_dump /srv/tmpcache ipc:///tmp/run/tmpcache2.write
+
+Using [ezcdb](http://b0llix.net/ezcdb/) to create a cdb file
+
+    > tmpcache_dump /srv/tmpcache | ezcdb make cache.cdb
+
+We can then use the new cdb file as a read-only cache
+
+    > tmpcache_read cache.cdb tcp://localhost:9898

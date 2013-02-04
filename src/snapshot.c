@@ -6,12 +6,22 @@
 
 #include <dirent.h>
 #include <sys/stat.h>
-#include <xs/xs.h>
+#include <zmq.h>
 #include <syslog.h>
 #include <stdio.h>
 
-void writecontentstostdout (DIR *d, bstring a, bstring rootpath) 
+
+tc_snapshotinfo_t * tc_snapshotcachetostdout (tc_snapshotconfig_t *config) 
 {
+  DIR *d;
+  
+  d = opendir(btocstr(config->cachepath));
+  if (!d) {
+    /*FIXME*/
+    syslog(LOG_ERR,"%s! error opening directory %s\n",__FUNCTION__,btocstr(config->cachepath));
+    return;
+  } 
+
   struct dirent *dir;
   
   size_t bufsize = 0;
@@ -22,7 +32,7 @@ void writecontentstostdout (DIR *d, bstring a, bstring rootpath)
     if (strcmp(dir->d_name, ".")== 0 || strcmp(dir->d_name,"..") == 0)
       continue;
     
-    bstring filename = bformat("%s/%s",btocstr(rootpath),dir->d_name);
+    bstring filename = bformat("%s/%s",btocstr(config->cachepath),dir->d_name);
     
     struct stat statbuf;
     stat(btocstr(filename),&statbuf);
@@ -44,27 +54,50 @@ void writecontentstostdout (DIR *d, bstring a, bstring rootpath)
 
       fprintf(stdout,"+%ld,%ld:%s->%s\n",strlen(dir->d_name),bufsize,dir->d_name,filebuffer);    
       c_free (filebuffer,NULL);
-    }          
+    }
+
+    if ((*config->signalf)())
+      break;             
   }
+
+  return NULL;
 }
 
-#define xs_assert(s) if (!(s)) {\
-  syslog(LOG_ERR,"%s! %s",__FUNCTION__,xs_strerror(xs_errno()));\
+#define zmq_assertmsg(s,str) if (!(s)) { \
+  (*config->errorf)(str);\
   goto error;}
 
-
-void writecontentstoserver (DIR *d, bstring address, bstring rootpath) 
+tc_snapshotinfo_t * tc_snapshotcachetoaddress (tc_snapshotconfig_t *config) 
 {
+  DIR *d;
+ 
+  d = opendir(btocstr(config->cachepath));
+  if (!d) {
+    /*FIXME*/
+    syslog(LOG_ERR,"%s! error opening directory %s\n",__FUNCTION__,btocstr(config->cachepath));
+    return;
+  }
+
   struct dirent *dir;
   
-  void * ctx = xs_init ();
-  xs_assert (ctx);
-  
-  void * sock = xs_socket (ctx,XS_PUSH);
-  xs_assert (sock);
+  void *ctx, *sock;
+  ctx = zmq_ctx_new();
+  if (ctx == NULL) {
+    (*config->errorf)("failed to create context");
+    return;
+  }
+
+  sock = zmq_socket (ctx,ZMQ_PUSH);
+  if (sock == NULL) {
+    (*config->errorf)("failed to create socket");
+    return;
+  }
 
   int32_t r = 0;
 
+  r = zmq_connect (sock,btocstr(config->address));
+  zmq_assertmsg (r != -1,"failed to connect");
+  
   size_t bufsize = 0;
   char *filebuffer = NULL;
 
@@ -73,7 +106,7 @@ void writecontentstoserver (DIR *d, bstring address, bstring rootpath)
     if (strcmp(dir->d_name, ".")== 0 || strcmp(dir->d_name,"..") == 0)
       continue;
     
-    bstring filename = bformat("%s/%s",btocstr(rootpath),dir->d_name);
+    bstring filename = bformat("%s/%s",btocstr(config->cachepath),dir->d_name);
     
     struct stat statbuf;
     stat(btocstr(filename),&statbuf);
@@ -96,140 +129,38 @@ void writecontentstoserver (DIR *d, bstring address, bstring rootpath)
       void *kdata = c_malloc(strlen(dir->d_name),NULL);
       memcpy(kdata,dir->d_name,strlen(dir->d_name));
       
-      xs_msg_t msg_ident;
-      xs_msg_init_data(&msg_ident,kdata,strlen(dir->d_name),c_free,NULL);
+      zmq_msg_t msg_ident;
+      zmq_msg_init_data(&msg_ident,kdata,strlen(dir->d_name),c_free,NULL);
       
-      r = xs_sendmsg(sock,&msg_ident,XS_SNDMORE);
-      xs_assert(r != -1);
+      r = zmq_sendmsg(sock,&msg_ident,ZMQ_SNDMORE);
+      zmq_assertmsg(r != -1,"error sendmsg");
       
-      xs_msg_t msg_part;
-      xs_msg_init_data(&msg_part,filebuffer,(bufsize - 1),c_free,NULL);
+      zmq_msg_t msg_part;
+      zmq_msg_init_data(&msg_part,filebuffer,(bufsize - 1),c_free,NULL);
       
-      r = xs_sendmsg(sock,&msg_part,0);
-      xs_assert(r != -1);
+      r = zmq_sendmsg(sock,&msg_part,0);
+      zmq_assertmsg(r != -1,"error sendmsg");
       
-      xs_msg_close(&msg_ident);
-      xs_msg_close(&msg_part);
+      zmq_msg_close(&msg_ident);
+      zmq_msg_close(&msg_part);
       
     }
+
+    if ((*config->signalf)())
+      break;
   }
 
-  r = xs_close (sock);
-  xs_assert (r != -1);
+  r = zmq_disconnect (sock,btocstr(config->address));
+  zmq_assertmsg (r != -1,"disconnect error");
 
-  r = xs_term (ctx);
-  xs_assert (r != -1);
+  r = zmq_close (sock);
+  zmq_assertmsg (r != -1,"error close");
+
+  r = zmq_ctx_destroy (ctx);
+  zmq_assertmsg (r != -1,"error on term");
 
  error:
-  return;
+  return NULL;
 }
 
-#if defined HAVE_LIBCDB
-void writecontentstocdbfile (DIR *d, bstring address, bstring rootpath) 
-{  
-  struct dirent *dir;
-  cdbm_t cdb;
-  
-  bstring tmpaddress = bformat("%s.tmp",btocstr(address));
 
-  int32_t fd = open((char *)tmpaddress->data, O_RDWR|O_CREAT);
-  if (fd == -1) {
-    
-    syslog (LOG_ERR,"%s, cdb (file %s) open error",__FUNCTION__,btocstr(tmpaddress));
-    return;
-  }
-  
-  if (cdb_make_start(&cdb,fd) != 0) {
-
-    close(fd);
-    syslog (LOG_ERR,"%s, cdb init error",__FUNCTION__);
-    return;
-  }
-  
-  size_t bufsize = 0;
-  char *filebuffer = NULL;
-  int32_t r = 0;
-  int32_t numofwrites = 0;
-
-  while ((dir = readdir(d)) != NULL) {
-
-    if (strcmp(dir->d_name, ".")== 0 || strcmp(dir->d_name,"..") == 0)
-      continue;
-    
-    bstring filename = bformat("%s/%s",btocstr(rootpath),dir->d_name);
-    
-    struct stat statbuf;
-    stat(btocstr(filename),&statbuf);
-    
-    if ( ! S_ISDIR(statbuf.st_mode)) {
-    
-      FILE *fp = fopen(btocstr(filename),"r");
-      if (fp) {
-	uint64_t cpos = ftell(fp);
-	fseek(fp,0,SEEK_END);
-	bufsize = ftell(fp);
-	fseek(fp,cpos,SEEK_SET);
-	
-	filebuffer = (char *)c_malloc(bufsize + 1,NULL); /*FIXME*/
-	filebuffer[bufsize] = '\0';
-	fread(&filebuffer[0],bufsize,1,fp);
-	fclose(fp);
-      }
-
-      r = cdb_make_add(&cdb,dir->d_name,strlen(dir->d_name),filebuffer,bufsize);
-      c_free (filebuffer,NULL);
-
-      if (r == 0) {
-	numofwrites ++; 
-	syslog (LOG_DEBUG,"%s %s --> cdb, %db",__FUNCTION__,btocstr(filename),bufsize);
-
-      } else {
-
-	syslog (LOG_DEBUG,"%s %s --> error, %s %db",__FUNCTION__,btocstr(filename),dir->d_name,bufsize);
-      }
-    }
-  }
- 
-  if (cdb_make_finish(&cdb) != 0) {
-    
-    syslog (LOG_ERR,"%s unable to finish cdb file %s",__FUNCTION__,btocstr(address));
-  }
-  
-  close (fd); /*FIXME*/
-
-  rename (btocstr(tmpaddress),btocstr(address)); /*FIXME */
-  /* TODO: chmod +r */
-
-  syslog (LOG_DEBUG,"%s number of writes to cdb file %d",__FUNCTION__,numofwrites);
-}
-#endif
-
-
-
-void tc_snapshotcache (tc_snapshotconfig_t *config) 
-{
-  DIR *d;
- 
-  d = opendir(btocstr(config->cachepath));
-  if (!d) {
-    syslog(LOG_ERR,"%s! error opening directory %s\n",__FUNCTION__,btocstr(config->cachepath));
-    return;
-  }
-  void (*writef) (DIR *,bstring,bstring);
-
-  if (blength(config->address)) {
-    writef = writecontentstoserver;
-  } else {
-    writef = writecontentstostdout;
-  }
-
-#if defined HAVE_LIBCDB
-  /*
-  if (c_iscdbfile (address))
-    writef = writecontentstocdbfile;
-  */
-#endif
-
-
-  (*writef) (d,config->address,config->cachepath);
-}

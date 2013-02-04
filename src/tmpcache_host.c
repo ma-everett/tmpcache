@@ -4,6 +4,7 @@
 #include <argtable2.h>
 #include <syslog.h>
 #include <signal.h>
+#include <zmq.h>
 #include <pthread.h>
 
 #include "cache.h"
@@ -24,6 +25,17 @@ uint32_t checksignal (void)
 {
   return (u_term);
 }
+
+void printerror (const char *msg) {
+
+  fprintf(stderr,"%s - %s",msg,zmq_strerror(zmq_errno()));
+}
+
+void logerror (const char *msg) {
+
+  syslog (LOG_ERR,"%s - %s",msg,zmq_strerror(zmq_errno()));
+}
+
 
 int main (int argc, char **argv) {
 
@@ -48,6 +60,16 @@ int main (int argc, char **argv) {
     goto finish;
   }
 
+  if (verbose->count) {
+
+    fprintf(stdout,"tmpcache host - version 0\n");
+    int32_t major,minor,patch;
+    zmq_version (&major,&minor,&patch);
+    fprintf(stdout,"compiled with zmq support %d.%d.%d\n",major,minor,patch);
+
+    goto finish;
+  }
+
   if (nerrors) {
     
     arg_print_errors (stdout,end,"");
@@ -55,20 +77,25 @@ int main (int argc, char **argv) {
     goto finish;
   }
 
+ 
   u_term = 0;
   signal (SIGINT,signalhandler);
   signal (SIGTERM,signalhandler);
-  openlog (NULL,LOG_PID|LOG_NDELAY,LOG_USER);
+
+  if (fsyslog->count)
+    openlog (NULL,LOG_PID|LOG_NDELAY,LOG_USER);
 
   void *read (void *arg) {
 
     tc_readconfig_t *config = (tc_readconfig_t *)arg;
-   
-    syslog (LOG_INFO,"reading cache from %s @ %s",btocstr(config->cachepath),btocstr(config->address));
+
+    if (fsyslog->count)
+      syslog (LOG_INFO,"reading cache from %s @ %s",btocstr(config->cachepath),btocstr(config->address));
     
     tc_readfromcache (config);
     
-    syslog (LOG_INFO,"closing cache %s @ %s for reading",btocstr(config->cachepath),btocstr(config->address));     
+    if (fsyslog->count)
+      syslog (LOG_INFO,"closing cache %s @ %s for reading",btocstr(config->cachepath),btocstr(config->address));     
   }
 
   tc_readconfig_t rconfig;
@@ -78,10 +105,12 @@ int main (int argc, char **argv) {
   /*TODO: check for correct address*/
   rconfig.size = 1 * (1024 * 1024);
   rconfig.signalf = checksignal;
+  rconfig.errorf = (fsyslog->count) ? logerror : printerror;
 
   pthread_t read_t;
   if (pthread_create(&read_t,NULL,read,(void *)&rconfig) != 0) {
-    syslog (LOG_ERR,"read thread creation error");
+    if (fsyslog->count)
+      syslog (LOG_ERR,"read thread creation error");
     goto finish;
   }
 
@@ -91,19 +120,21 @@ int main (int argc, char **argv) {
   wconfig.size = 1 * (1024 * 1024);
   wconfig.maxsize = 64 * (1024 * 1024);
   wconfig.signalf = checksignal;
-  
-  syslog (LOG_INFO,"writing cache from %s @ %s",btocstr(wconfig.cachepath),btocstr(wconfig.address));
+  wconfig.errorf = (fsyslog->count) ? logerror : printerror;
+   
+  if (fsyslog->count)
+    syslog (LOG_INFO,"writing cache from %s @ %s",btocstr(wconfig.cachepath),btocstr(wconfig.address));
 
   tc_writefromcache (&wconfig);  
-
-  syslog (LOG_INFO,"closing cache %s @ %s for reading",btocstr(wconfig.cachepath),btocstr(wconfig.address));
-  
   pthread_join (read_t,NULL);
+
+  if (fsyslog->count) {
+    syslog (LOG_INFO,"closing cache %s @ %s for reading",btocstr(wconfig.cachepath),btocstr(wconfig.address));
+    closelog();
+  }
 
   bdestroy (rconfig.cachepath);
   bdestroy (rconfig.address);
-
-  closelog();
 
  finish:
 

@@ -4,6 +4,7 @@
 #include <argtable2.h>
 #include <syslog.h>
 #include <signal.h>
+#include <zmq.h>
 
 #include "cache.h"
 
@@ -22,6 +23,13 @@ void signalhandler (int32_t signo)
 uint32_t checksignal (void) 
 {
   return (u_term);
+}
+
+void printerror (const char *msg) {
+  fprintf(stderr,"%s - %s\n",msg,zmq_strerror(zmq_errno()));
+}
+void logerror (const char *msg) {
+  syslog(LOG_ERR,"%s - %s",msg,zmq_strerror(zmq_errno()));
 }
 
 int main (int argc, char **argv) {
@@ -47,112 +55,13 @@ int main (int argc, char **argv) {
     goto finish;
   }
 
-  if (nerrors) {
-    
-    arg_print_errors (stdout,end,"");
-    arg_print_syntaxv(stdout,argtable,"\n\n");
-    goto finish;
-  }
+  if (verbose->count) {
 
-/* tmpcache/tmpcache_read.c */
+    fprintf(stdout,"tmpcache host - version 0\n");
+    int32_t major,minor,patch;
+    zmq_version (&major,&minor,&patch);
+    fprintf(stdout,"compiled with zmq support %d.%d.%d\n",major,minor,patch);
 
-#include <argtable2.h>
-#include <syslog.h>
-#include <signal.h>
-
-#include "cache.h"
-
-struct arg_lit *verbose, *fsyslog,*help;
-struct arg_file *cachepath, *netaddress0;
-struct arg_end *end;
-
-uint32_t u_term;
-
-void signalhandler (int32_t signo)
-{
-  if (signo == SIGINT || signo == SIGTERM)
-    u_term = 1;
-}
-
-uint32_t checksignal (void) 
-{
-  return (u_term);
-}
-
-int main (int argc, char **argv) {
-
-  void *argtable[] = {
-    help = arg_lit0("h","help","print this screen"),
-    verbose = arg_lit0("v","verbose","tell me everything"),
-    fsyslog = arg_lit0(NULL,"syslog","use syslog"),
-    cachepath = arg_file1(NULL,NULL,"cachepath","directory or .cdb database file"),
-    netaddress0 = arg_file1(NULL,NULL,"address","crossroads.io read network address "),
-    
-    end = arg_end(20),
-  };
-  
-  int32_t nerrors = arg_parse(argc,argv,argtable);
-  
-  if (help->count) {
-    
-    fprintf(stdout,"tmpcache %s - version 0\n",__FUNCTION__);
-    arg_print_syntaxv(stdout,argtable,"\n\n");
-    arg_print_glossary (stdout,argtable,"%-25s %s\n");
-   
-    goto finish;
-  }
-
-  if (nerrors) {
-    
-    arg_print_errors (stdout,end,"");
-    arg_print_syntaxv(stdout,argtable,"\n\n");
-    goto finish;
-  }
-/* tmpcache/tmpcache_read.c */
-
-#include <argtable2.h>
-#include <syslog.h>
-#include <signal.h>
-
-#include "cache.h"
-
-struct arg_lit *verbose, *fsyslog,*help;
-struct arg_file *cachepath, *netaddress0;
-struct arg_end *end;
-
-uint32_t u_term;
-
-void signalhandler (int32_t signo)
-{
-  if (signo == SIGINT || signo == SIGTERM)
-    u_term = 1;
-}
-
-uint32_t checksignal (void) 
-{
-  return (u_term);
-}
-
-int main (int argc, char **argv) {
-
-  void *argtable[] = {
-    help = arg_lit0("h","help","print this screen"),
-    verbose = arg_lit0("v","verbose","tell me everything"),
-    fsyslog = arg_lit0(NULL,"syslog","use syslog"),
-    cachepath = arg_file1(NULL,NULL,"cachepath","directory or .cdb database file"),
-    netaddress0 = arg_file1(NULL,NULL,"address","crossroads.io read network address "),
-    
-    end = arg_end(20),
-  };
-  
-  int32_t nerrors = arg_parse(argc,argv,argtable);
-  
-  if (help->count) {
-    
-    fprintf(stdout,"tmpcache %s - version 0\n",__FUNCTION__);
-    arg_print_syntaxv(stdout,argtable,"\n\n");
-    arg_print_glossary (stdout,argtable,"%-25s %s\n");
-   
     goto finish;
   }
 
@@ -167,8 +76,6 @@ int main (int argc, char **argv) {
   signal (SIGINT,signalhandler);
   signal (SIGTERM,signalhandler);
 
-  openlog (NULL,LOG_PID|LOG_NDELAY,LOG_USER);
-
   tc_readconfig_t config;
   config.cachepath = bfromcstr (cachepath->filename[0]);
   /*TODO: check for .cdb*/
@@ -176,52 +83,34 @@ int main (int argc, char **argv) {
   /*TODO: check for correct address*/
   config.size = 1 * (1024 * 1024);
   config.signalf = checksignal;
+  config.errorf = (fsyslog->count) ? logerror : printerror;
 
-  syslog (LOG_INFO,"reading cache from %s @ %s",btocstr(config.cachepath),btocstr(config.address));
+  if (fsyslog->count) {
+    openlog (NULL,LOG_PID|LOG_NDELAY,LOG_USER);
+    syslog (LOG_INFO,"reading cache from %s @ %s",btocstr(config.cachepath),btocstr(config.address));
+  }
     
-  tc_readfromcache (&config);
+  tc_readinfo_t *info = tc_readfromcache (&config);
 
-  syslog (LOG_INFO,"closing cache %s @ %s for reading",btocstr(config.cachepath),btocstr(config.address));    
+  if (fsyslog->count) {
+    if (info) {
+      syslog (LOG_INFO,"closing cache %s @ %s for reading, %d reads, %d misses",
+	      btocstr(config.cachepath),btocstr(config.address), info->numofreads,info->numofmisses);    
+    } else {
+      syslog (LOG_INFO,"closing cache %s @ %s for reading",
+	      btocstr(config.cachepath),btocstr(config.address));
+    }
 
+    closelog();
+  }
 
-
-  openlog (NULL,LOG_PID|LOG_NDELAY,LOG_USER);
-
-  tc_readconfig_t config;
-  config.cachepath = bfromcstr (cachepath->filename[0]);
-  /*TODO: check for .cdb*/
-  config.address = bfromcstr (netaddress0->filename[0]);
-  /*TODO: check for correct address*/
-  config.size = 1 * (1024 * 1024);
-  config.signalf = checksignal;
-
-  syslog (LOG_INFO,"reading cache from %s @ %s",btocstr(config.cachepath),btocstr(config.address));
-    
-  tc_readfromcache (&config);
-
-  syslog (LOG_INFO,"closing cache %s @ %s for reading",btocstr(config.cachepath),btocstr(config.address));    
-
-
-  openlog (NULL,LOG_PID|LOG_NDELAY,LOG_USER);
-
-  tc_readconfig_t config;
-  config.cachepath = bfromcstr (cachepath->filename[0]);
-  /*TODO: check for .cdb*/
-  config.address = bfromcstr (netaddress0->filename[0]);
-  /*TODO: check for correct address*/
-  config.size = 1 * (1024 * 1024);
-  config.signalf = checksignal;
-
-  syslog (LOG_INFO,"reading cache from %s @ %s",btocstr(config.cachepath),btocstr(config.address));
-    
-  tc_readfromcache (&config);
-
-  syslog (LOG_INFO,"closing cache %s @ %s for reading",btocstr(config.cachepath),btocstr(config.address));    
-    
-  bdestroy (config.address);
   bdestroy (config.cachepath);
+  bdestroy (config.address);
 
-  closelog();
+  if (info) {
+    c_free (info,NULL);
+  }
+
 
  finish:
 
