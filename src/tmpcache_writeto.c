@@ -126,6 +126,12 @@ int main (int argc, char **argv)
   zmq_assertmsg (r != -1,"sendmsg part");
   
 
+  r = zmq_msg_close (&msg_key);
+  zmq_assertmsg (r != -1,"msg close key");
+
+  r = zmq_msg_close (&msg_part);
+  zmq_assertmsg (r != -1,"msg close part");
+
  error:
   
   r = zmq_disconnect (sock,netaddress0->filename[0]);

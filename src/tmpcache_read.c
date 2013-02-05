@@ -8,7 +8,7 @@
 
 #include "cache.h"
 
-struct arg_lit *verbose, *fsyslog,*help;
+struct arg_lit *verbose, *fsyslog,*help,*miss;
 struct arg_file *cachepath, *netaddress0;
 struct arg_end *end;
 
@@ -35,6 +35,7 @@ void logerror (const char *msg) {
 int main (int argc, char **argv) {
 
   void *argtable[] = {
+    miss = arg_lit0(NULL,"miss","all reads are misses"),
     help = arg_lit0("h","help","print this screen"),
     verbose = arg_lit0("v","verbose","tell me everything"),
     fsyslog = arg_lit0(NULL,"syslog","use syslog"),
@@ -84,6 +85,7 @@ int main (int argc, char **argv) {
   config.size = 1 * (1024 * 1024);
   config.signalf = checksignal;
   config.errorf = (fsyslog->count) ? logerror : printerror;
+  config.miss = (miss->count) ? 1 : 0;
 
   if (fsyslog->count) {
     openlog (NULL,LOG_PID|LOG_NDELAY,LOG_USER);

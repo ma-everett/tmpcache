@@ -40,6 +40,7 @@ typedef struct {
   bstring address;
   bstring cachepath;
   uint64_t size;
+  uint32_t miss;
 
   c_signalf signalf;
   c_errorf errorf;

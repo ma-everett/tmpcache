@@ -1,12 +1,13 @@
 
-/* tmpcache/utility.c */
+/* tmpcache/cutility.c - move to utility*/
 
 #include "cache.h"
 #include <stdlib.h>
 
+/*FIXME*/
 void *c_malloc (unsigned int size,void *hint)
 {
-  return malloc(size);
+    return malloc(size);
 }
 
 void  c_free   (void *p,void *hint) 

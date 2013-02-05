@@ -53,7 +53,15 @@ Now run a read instace on a TCP network address
 
     > tmpcache_read /srv/tmpcache tcp://localhost:9898
  
-*tmpcache* can be stopped by sending a TERM signal. 
+*tmpcache* can be stopped by sending a TERM signal. If you wish to run both
+ services within a single process, you can use _host_ instead:
+
+    > tmpcache_host /srv/tmpcache ipc:///tmp/run/tmpcache.write
+      tcp://localhost:9898 &
+
+ The _write_ address is listed first. Benefits of a single process, include
+ easier management, but also that the _journal_ (still in development) will
+ use a single address for both _read_ and _write_ services.
 
 Snapshotting to CDB or another cache
 ------------------------------------
@@ -85,6 +93,16 @@ Now the maximum amount of time for an answer from the read service will be
 9 seconds. We can redirect the output as standard.
 
     > tmpcache_readfrom --tries=3 --timeout=1 foo tcp://localhost:9898 > foo 
+
+There are currently 2 modes of operation, the default _timeout_ mode and the
+_blocking_ mode. The _timeout_ version is useful if you are unsure that the
+service is available or stable. Whilst the _blocking_ version will wait until
+there is a response. _Blocking_ is, in theory, faster, too enable _blocking_ mode:
+
+    > tmpcache_readfrom --blocking foo tcp://localhost:9898
+
+In this case, _tries_ and _timeout_ options do not have any affect, so are not
+required. 
 
 Writing to the cache
 --------------------

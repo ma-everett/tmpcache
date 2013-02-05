@@ -9,6 +9,7 @@
 
 #include <zmq.h>
 
+
 /* read data from a file */
 uint64_t readcontentsfromfile (void *hint,bstring key,char *data,uint64_t dsize)
 {
@@ -62,6 +63,11 @@ uint64_t readcontentsfromcdb (void *hint,bstring key,char *data,uint64_t dsize)
 }
 #endif
 
+uint64_t readempty (void *hint,bstring key,char *data,uint64_t dsize)
+{
+  return 0;
+}
+
 
 #define zmq_assertmsg(s,str) if (!(s)) {\
   (*config->errorf)(str);\
@@ -75,7 +81,7 @@ tc_readinfo_t * tc_readfromcache (tc_readconfig_t * config)
   uint32_t sbufsize = 256 - (blength(config->cachepath) + 2);
   char sbuf[ sbufsize ];
   
-  c_readf readf = readcontentsfromfile;
+  c_readf readf = (config->miss) ? readempty : readcontentsfromfile;
   void *hint = NULL;
 
   int32_t r = -1;
@@ -115,7 +121,9 @@ tc_readinfo_t * tc_readfromcache (tc_readconfig_t * config)
     syslog(LOG_ERR,"%s! %s",__FUNCTION__,zmq_strerror(zmq_errno()));
     goto exitearly;
   }
- 
+
+  zmq_ctx_set(ctx,ZMQ_IO_THREADS,2);
+
   sock = zmq_socket (ctx,ZMQ_XREP);
   if (sock == NULL) {
 
@@ -128,11 +136,11 @@ tc_readinfo_t * tc_readfromcache (tc_readconfig_t * config)
   info->numofreads = 0;
   info->numofmisses = 0;
  
-  /*
+  
   uint32_t rcvhwm = 500;
   r = zmq_setsockopt (sock,ZMQ_RCVHWM,&rcvhwm,sizeof(rcvhwm));
   zmq_assertmsg (r == 0,"xs setsockopt rcvhwm error");
-  */
+  
 
   r = zmq_bind (sock,btocstr(config->address));
   if (r == -1) {
@@ -143,26 +151,15 @@ tc_readinfo_t * tc_readfromcache (tc_readconfig_t * config)
     goto exitearly;
   }
 
-  zmq_msg_t msg_ident;
-  r = zmq_msg_init (&msg_ident);
-  zmq_assertmsg (r != -1,"ident init error");
-
-  zmq_msg_t msg_blank;
-  r = zmq_msg_init (&msg_blank);
-  zmq_assertmsg (r != -1,"blank init error");
-
-  zmq_msg_t msg_key;
-  r = zmq_msg_init (&msg_key);
-  zmq_assertmsg (r != -1,"key init error");
-  
-  zmq_msg_t msg_part;
-
+ 
   zmq_pollitem_t pitems[1];
   pitems[0].socket = sock;
   pitems[0].events = ZMQ_POLLIN;
 
   uint32_t count  = 0;
-  
+  uint64_t rsize = 0;
+  void *data = NULL;
+
   for (;;) {
     
     if (count == 0)
@@ -176,11 +173,24 @@ tc_readinfo_t * tc_readfromcache (tc_readconfig_t * config)
       continue;
     }
 
-    r = zmq_recvmsg (sock,&msg_ident,0);
+    zmq_msg_t msg_ident;
+    r = zmq_msg_init (&msg_ident);
+    zmq_assertmsg (r != -1,"ident init error");
+    
+    zmq_msg_t msg_blank;
+    r = zmq_msg_init (&msg_blank);
+    zmq_assertmsg (r != -1,"blank init error");
+    
+    zmq_msg_t msg_key;
+    r = zmq_msg_init (&msg_key);
+    zmq_assertmsg (r != -1,"key init error");
+  
+
+    r = zmq_msg_recv (&msg_ident,sock,0);
     zmq_assertmsg (r != -1,"recvmsg ident error");
-    r = zmq_recvmsg (sock,&msg_blank,0);
+    r = zmq_msg_recv (&msg_blank,sock,0);
     zmq_assertmsg (r != -1,"recvmsg blank error");
-    r = zmq_recvmsg (sock,&msg_key,0);
+    r = zmq_msg_recv (&msg_key,sock,0);
     zmq_assertmsg (r != -1,"recvmsg key error");
 
     count--;
@@ -199,19 +209,22 @@ tc_readinfo_t * tc_readfromcache (tc_readconfig_t * config)
 #else 
     key = bformat ("%s/%s\0",btocstr(config->cachepath),sbuf);
 #endif
-
-    uint64_t rsize = 0;
-    void *data = NULL;
     
     if (!filtered) {
-      data = (void *)c_malloc (config->size,NULL);
+      if (!data)
+	data = (void *)c_malloc (config->size,NULL);
+      
       rsize = (*readf)(hint,key,data,config->size);
     }    
-
+ 
+    zmq_msg_t msg_part;
+    
     if (rsize) {
-      r = zmq_msg_init_data (&msg_part,data,rsize,c_free,NULL);
+      r = zmq_msg_init_data (&msg_part,data,rsize,c_free,NULL); 
       zmq_assertmsg (r != -1,"msg part init error");
+      data = NULL;
     } else {
+      
       r = zmq_msg_init (&msg_part);
       zmq_assertmsg (r != -1,"msg part init error");
     
@@ -220,28 +233,29 @@ tc_readinfo_t * tc_readfromcache (tc_readconfig_t * config)
 
     bdestroy (key);
 
-    r = zmq_sendmsg (sock,&msg_ident,ZMQ_SNDMORE);
+    r = zmq_msg_send (&msg_ident,sock,ZMQ_SNDMORE);
     zmq_assertmsg (r != -1,"sendmsg ident error");
-    r = zmq_sendmsg (sock,&msg_blank,ZMQ_SNDMORE);
+
+    r = zmq_msg_send (&msg_blank,sock,ZMQ_SNDMORE);
     zmq_assertmsg (r != -1,"sendmsg blank error");
-    r = zmq_sendmsg (sock,&msg_key,ZMQ_SNDMORE);
+ 
+    r = zmq_msg_send (&msg_key,sock,ZMQ_SNDMORE);
     zmq_assertmsg (r != -1,"sendmsg key error");
-    r = zmq_sendmsg (sock,&msg_part,0);
+
+    r = zmq_msg_send (&msg_part,sock,0);
     zmq_assertmsg (r != -1,"sendmsg part error");
 
-    info->numofreads ++;
 
+    zmq_msg_close (&msg_ident);
+    zmq_msg_close (&msg_blank);
+    zmq_msg_close (&msg_key);
+    zmq_msg_close (&msg_part);
+
+    info->numofreads ++;
   } /*for loop*/
 
  error:
   
-  r = zmq_msg_close (&msg_ident);
-  zmq_assertmsg (r != -1,"close ident error");
-  r = zmq_msg_close (&msg_blank);
-  zmq_assertmsg (r != -1,"close blank error");
-  r = zmq_msg_close (&msg_key);
-  zmq_assertmsg (r != -1,"close key error");
-
   zmq_unbind (sock,btocstr(config->address)); /*FIXME, check return*/
   
   r = zmq_close (sock);
