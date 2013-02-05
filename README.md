@@ -97,12 +97,19 @@ Now the maximum amount of time for an answer from the read service will be
 There are currently 2 modes of operation, the default _timeout_ mode and the
 _blocking_ mode. The _timeout_ version is useful if you are unsure that the
 service is available or stable. Whilst the _blocking_ version will wait until
-there is a response. _Blocking_ is, in theory, faster, too enable _blocking_ mode:
+there is a response. _Blocking_ is, in theory, faster, to enable _blocking_ mode:
 
     > tmpcache_readfrom --blocking foo tcp://localhost:9898
 
 In this case, _tries_ and _timeout_ options do not have any affect, so are not
 required. 
+
+We can run a throughput test with the _test_ option, this will generate a
+unique key (in the form, keyN, where N is a number, less than supplied). 
+
+    > time tmpcache_readfrom --test=1000 foo tcp://localhost:9898
+
+Will test with keys in the range, _foo0_ to _foo999_. 
 
 Writing to the cache
 --------------------
@@ -116,6 +123,14 @@ Or via a file
 
 Deleting from the cache
 ----------------------
+
+Delete is a special form of write, for tmpcache it simply a zero length data
+part. 
+
+    > tmpcache_writeto foo ipc:///tmp/run/tmpcache.write
+    > <enter>
+
+The shorthand is to use the _delete_ flag
 
     > tmpcache_writeto --delete foo ipc:///tmp/run/tmpcache.write
 
