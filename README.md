@@ -67,3 +67,21 @@ Using [ezcdb](http://b0llix.net/ezcdb/) to create a cdb file
 We can then use the new cdb file as a read-only cache
 
     > tmpcache_read cache.cdb tcp://localhost:9898
+
+Reading from the cache
+----------------------
+
+The default read will connect to the read service, ask for the data of the
+key supplied (_foo_ in the example) and wait for a reply. The default timeout
+for the wait is 1 second. 
+
+    > tmpcache_readfrom foo tcp://localhost:9898
+
+We can change the _timeout_ and the number of _tries_ 
+
+    > tmpcache_readfrom --tries=3 --timeout=3 foo tcp://localhost:9898
+
+Now the maximum amount of time for an answer from the read service will be
+9 seconds. We can redirect the output as standard.
+
+    > tmpcache_readfrom --tries=3 --timeout=1 foo tcp://localhost:9898 > foo 
