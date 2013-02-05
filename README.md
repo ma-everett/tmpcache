@@ -85,3 +85,20 @@ Now the maximum amount of time for an answer from the read service will be
 9 seconds. We can redirect the output as standard.
 
     > tmpcache_readfrom --tries=3 --timeout=1 foo tcp://localhost:9898 > foo 
+
+Writing to the cache
+--------------------
+
+    > tmpcache_writeto foo ipc:///tmp/run/tmpcache.write
+    > [contents] <enter>
+
+Or via a file
+
+    > cat somefile | tmpcache_writeto foo ipc:///tmp/run/tmpcache.write
+
+Deleting from the cache
+----------------------
+
+    > tmpcache_writeto --delete foo ipc:///tmp/run/tmpcache.write
+
+
