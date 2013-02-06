@@ -24,7 +24,7 @@ Currently no install target, as there is no production ready code to use.
 Running
 ----------------
 
-    > tmpcache_host dir raddress waddress 
+    > tmpcache_host dir waddress raddress 
 
 Where _waddress_ (for writing) and _raddress_ (for reading) is 
 an zmq adddress in one of the following forms.
@@ -35,7 +35,7 @@ an zmq adddress in one of the following forms.
 _dir_ is the directory (absolute path) where the cache will reside. To 
 improve the performance, use a *tmpfs* for the cache directory. 
 
-You can run numerous copies of *tmpcache* provided you use different network addresses. For instance, you can run many read-only instance, each with a different network address and a single write-only instance. 
+You can run numerous copies of *tmpcache* provided you use different network addresses. For example, you can run many read-only instances, each with a different network address and a single write-only instance. 
 
 Running with Tmpfs
 -------------------
@@ -61,10 +61,10 @@ Now run a read instace on a TCP network address
 
  The _write_ address is listed first. Benefits of a single process, include
  easier management, but also that the _journal_ (still in development) will
- use a single address for both _read_ and _write_ services.
+ use a single publish address for both _read_ and _write_ services.
 
-Snapshotting to CDB or another cache
-------------------------------------
+Snapshoting to another cache or a cdb file
+------------------------------------------
 
     > tmpcache_dump /srv/tmpcache ipc:///tmp/run/tmpcache2.write
 
@@ -134,4 +134,48 @@ The shorthand is to use the _delete_ flag
 
     > tmpcache_writeto --delete foo ipc:///tmp/run/tmpcache.write
 
+Collecting all the Commands togeather
+-------------------------------------
 
+The following (crude) _bash_ script collects all the seperate *tmpcache_*
+commands togeather, and adds a little sugar.  
+
+```bash
+#! /bin/bash
+
+## tmpcache : simple prog runner
+
+args=("$@")
+shift 1
+
+case ${args[0]} in
+'hostread')
+  tmpcache_read --syslog "$@"
+  ;;
+
+'hostwrite')
+  tmpcache_write --syslog "$@"
+;;
+
+'host')
+  tmpcache_host --syslog "$@"
+;;
+
+'dump')
+  tmpcache_dump --cdb "$@"
+;;
+
+'read')
+  tmpcache_readfrom --blocking "$@"
+;;
+
+'write')
+  tmpcache_writeto "$@"
+;;
+
+'delete')
+  tmpcache_writeto --delete "$@"
+;;
+
+esac
+```

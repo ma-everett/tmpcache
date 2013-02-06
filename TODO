@@ -1,0 +1,7 @@
+T O D O
+=======
+
+ + readfrom | host, change the cdb option to a flag : --cdb
+ + move and refactor code from cutility.c to utility.c
+ + dump could use new output formats, --cdb, --getline etc
+ + write a set of test scripts to punish the services
